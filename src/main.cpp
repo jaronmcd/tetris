@@ -25,7 +25,7 @@
 #define BOARD_OFFSET_Y 0
 
 // ======================
-// Bluepad32 DPAD bits (matches what you're seeing)
+// Bluepad32 DPAD bits (matches your logs)
 // ======================
 #define DPAD_UP    0x01
 #define DPAD_DOWN  0x02
@@ -37,10 +37,10 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 static inline uint16_t XY(uint8_t x, uint8_t y) {
   if (x >= MATRIX_W || y >= MATRIX_H) return 0;
+
   uint8_t yy = MATRIX_BOTTOM_UP ? (MATRIX_H - 1 - y) : y;
 
   if (!SERPENTINE) return (uint16_t)yy * MATRIX_W + x;
-
   if ((yy & 1) == 0) return (uint16_t)yy * MATRIX_W + x;
   return (uint16_t)yy * MATRIX_W + (MATRIX_W - 1 - x);
 }
@@ -95,17 +95,56 @@ static const uint16_t SHAPES[7][4] = {
   { 0x2E00, 0x4460, 0x0E80, 0xC440 }  // L
 };
 
-static const uint32_t PIECE_COLORS[8] = {
-  0,
-  0x00FFFF, // I
-  0xFFFF00, // O
-  0xAA00FF, // T
-  0x00FF00, // S
-  0xFF0000, // Z
-  0x0000FF, // J
-  0xFF7F00  // L
+// ---------- Themes / Palettes ----------
+static constexpr uint8_t NUM_THEMES = 5;
+
+// THEMES[theme][pieceId 0..7], rrggbb
+static const uint32_t THEMES[NUM_THEMES][8] = {
+  // 0) Classic
+  {0, 0x00FFFF, 0xFFFF00, 0xAA00FF, 0x00FF00, 0xFF0000, 0x0000FF, 0xFF7F00},
+  // 1) Neon
+  {0, 0x00F0FF, 0xFFD000, 0xFF00FF, 0x00FF66, 0xFF0066, 0x3B6CFF, 0xFF4D00},
+  // 2) Ice
+  {0, 0xA0FFFF, 0xE8F7FF, 0x80A0FF, 0x60FFCC, 0xFF80A0, 0x60A0FF, 0xA0D8FF},
+  // 3) Lava
+  {0, 0xFFAA00, 0xFFDD00, 0xFF3300, 0xFF6600, 0xCC0000, 0xFF8800, 0xFF4400},
+  // 4) Synthwave
+  {0, 0x00E5FF, 0xFFF400, 0xFF3DF2, 0x00FF9A, 0xFF2D55, 0x6C63FF, 0xFF7A00},
 };
 
+static inline uint8_t themeIndex() {
+  // stage changes every level. Want slower? use: (level-1)/2
+  return (uint8_t)((level - 1) % NUM_THEMES);
+}
+
+static inline uint32_t pieceColor(uint8_t id /*1..7*/) {
+  return rgb(THEMES[themeIndex()][id]);
+}
+
+// ---------- Level-up flash ----------
+static void doLevelUpFlash() {
+  // quick “arcade” white flashes without being too blinding
+  uint8_t oldB = strip.getBrightness();
+
+  strip.setBrightness(40);
+  strip.fill(strip.Color(80, 80, 80));
+  strip.show();
+  delay(55);
+
+  strip.clear();
+  strip.show();
+  delay(35);
+
+  strip.fill(strip.Color(80, 80, 80));
+  strip.show();
+  delay(55);
+
+  strip.setBrightness(oldB);
+  strip.clear();
+  strip.show();
+}
+
+// ---------- Core gameplay ----------
 static bool fits(uint8_t type, uint8_t rot, int8_t px, int8_t py) {
   uint16_t m = SHAPES[type][rot & 3];
   for (uint8_t r = 0; r < 4; r++) {
@@ -147,7 +186,7 @@ static void refillBag() {
   for (uint8_t i = 0; i < 7; i++) bag[i] = i;
   for (int i = 6; i > 0; i--) {
     uint32_t r = esp_random();
-    int j = r % (i + 1);
+    int j = (int)(r % (i + 1));
     uint8_t tmp = bag[i];
     bag[i] = bag[j];
     bag[j] = tmp;
@@ -191,7 +230,14 @@ static void clearLines() {
 
   if (clearedThis > 0) {
     linesCleared += clearedThis;
+
+    uint8_t oldLevel = level;
     updateLevel();
+    if (level != oldLevel) {
+      doLevelUpFlash();
+      Serial.printf("Level %u (theme %u)\n", level, themeIndex());
+    }
+
     uint32_t add = 0;
     switch (clearedThis) {
       case 1: add = 40; break;
@@ -249,39 +295,120 @@ static void resetGame() {
   linesCleared = 0;
   level = 1;
   gameOver = false;
+
   bagIdx = 7;
   refillBag();
   spawnNext();
   lastFallMs = millis();
 }
 
+// ---------- Arcade border helpers ----------
+static inline uint8_t borderTimeShiftForLevel() {
+  // Smaller shift => faster animation as you level up
+  if (level <= 1) return 6;
+  if (level <= 3) return 5;
+  if (level <= 6) return 4;
+  if (level <= 10) return 3;
+  if (level <= 15) return 2;
+  return 1;
+}
+
+// 0..255 triangle wave (no floats)
+static inline uint8_t tri8(uint8_t x) {
+  return (x & 0x80) ? (uint8_t)(255 - ((x & 0x7F) << 1)) : (uint8_t)((x & 0x7F) << 1);
+}
+
+// Classic NeoPixel wheel: pos 0..255 -> RGB
+static inline void wheel(uint8_t pos, uint8_t &r, uint8_t &g, uint8_t &b) {
+  pos = 255 - pos;
+  if (pos < 85) {
+    r = 255 - pos * 3; g = 0;          b = pos * 3;
+  } else if (pos < 170) {
+    pos -= 85;
+    r = 0;          g = pos * 3;       b = 255 - pos * 3;
+  } else {
+    pos -= 170;
+    r = pos * 3;    g = 255 - pos * 3; b = 0;
+  }
+}
+
+static inline uint32_t arcadeBorderColor(uint8_t x, uint8_t y, uint32_t nowMs) {
+  // Distance from playable board area (0 = inside board)
+  int dx = 0, dy = 0;
+
+  if (x < BOARD_OFFSET_X) dx = BOARD_OFFSET_X - x;
+  else if (x >= (BOARD_OFFSET_X + BOARD_W)) dx = x - (BOARD_OFFSET_X + BOARD_W - 1);
+
+  if (y < BOARD_OFFSET_Y) dy = BOARD_OFFSET_Y - y;
+  else if (y >= (BOARD_OFFSET_Y + BOARD_H)) dy = y - (BOARD_OFFSET_Y + BOARD_H - 1);
+
+  int dist = max(dx, dy);
+  if (dist <= 0) return 0; // inside board
+
+  // Max border thickness around board
+  const int maxDist =
+      max(max(BOARD_OFFSET_X, (MATRIX_W - (BOARD_OFFSET_X + BOARD_W))),
+          max(BOARD_OFFSET_Y, (MATRIX_H - (BOARD_OFFSET_Y + BOARD_H))));
+
+  uint8_t tShift = borderTimeShiftForLevel();
+  uint8_t theme = themeIndex();
+  uint8_t themeOffset = (uint8_t)(theme * 48);
+
+  // Hue: position + time + theme offset, speed increases with level
+  uint8_t hue = (uint8_t)(x * 17 + y * 23 + (nowMs >> tShift) + themeOffset);
+
+  uint8_t r, g, b;
+  wheel(hue, r, g, b);
+
+  // Fade outward: near board bright, farther out dim
+  uint8_t fade = 70;
+  if (maxDist > 1) {
+    fade = (uint8_t)(70 + (185 * (maxDist - (dist - 1))) / maxDist);
+  } else {
+    fade = 255;
+  }
+
+  // Gentle pulse: 190..255
+  uint8_t pulse = (uint8_t)(190 + (tri8((uint8_t)(nowMs >> 5)) >> 2));
+
+  uint16_t scale16 = (uint16_t)fade * (uint16_t)pulse;
+  uint8_t scale = (uint8_t)(scale16 >> 8);
+
+  r = (uint8_t)(((uint16_t)r * scale) >> 8);
+  g = (uint8_t)(((uint16_t)g * scale) >> 8);
+  b = (uint8_t)(((uint16_t)b * scale) >> 8);
+
+  return strip.Color(r, g, b);
+}
+
 // ---------- Rendering ----------
 static void render() {
   strip.clear();
 
-  // dim border outside board so you can see orientation
-  uint32_t border = strip.Color(2, 2, 2);
+  uint32_t nowMs = millis();
+
+  // Border: animated arcade rainbow, fades outward
   for (uint8_t y = 0; y < MATRIX_H; y++) {
     for (uint8_t x = 0; x < MATRIX_W; x++) {
       bool inBoardX = (x >= BOARD_OFFSET_X) && (x < (BOARD_OFFSET_X + BOARD_W));
       bool inBoardY = (y >= BOARD_OFFSET_Y) && (y < (BOARD_OFFSET_Y + BOARD_H));
       if (!inBoardX || !inBoardY) {
-        setPixel(x, y, border);
+        setPixel(x, y, arcadeBorderColor(x, y, nowMs));
       }
     }
   }
 
-  // board
+  // Locked blocks
   for (uint8_t by = 0; by < BOARD_H; by++) {
     for (uint8_t bx = 0; bx < BOARD_W; bx++) {
       uint8_t id = board[by][bx];
       if (id) {
-        setPixel(BOARD_OFFSET_X + bx, BOARD_OFFSET_Y + by, rgb(PIECE_COLORS[id]));
+        setPixel(BOARD_OFFSET_X + bx, BOARD_OFFSET_Y + by, pieceColor(id));
       }
     }
   }
 
-  // current piece
+  // Current piece
   if (!gameOver) {
     uint16_t m = SHAPES[cur.type][cur.rot & 3];
     uint8_t id = (uint8_t)(cur.type + 1);
@@ -292,7 +419,7 @@ static void render() {
         int8_t by = cur.y + (int8_t)r;
         if (by < 0) continue;
         if (bx < 0 || bx >= BOARD_W || by >= BOARD_H) continue;
-        setPixel(BOARD_OFFSET_X + (uint8_t)bx, BOARD_OFFSET_Y + (uint8_t)by, rgb(PIECE_COLORS[id]));
+        setPixel(BOARD_OFFSET_X + (uint8_t)bx, BOARD_OFFSET_Y + (uint8_t)by, pieceColor(id));
       }
     }
   } else {
@@ -306,7 +433,7 @@ static void render() {
   strip.show();
 }
 
-// ---------- Serial + Gamepad actions ----------
+// ---------- Input ----------
 struct Actions {
   bool left = false;
   bool right = false;
@@ -345,7 +472,7 @@ static bool fireWithRepeat(bool held, RepeatKey &rk, uint32_t now,
   if (!rk.lastHeld) {
     rk.lastHeld = true;
     rk.nextMs = now + firstDelayMs;
-    return true;
+    return true; // immediate on press
   }
   if (now >= rk.nextMs) {
     rk.nextMs = now + repeatMs;
@@ -361,7 +488,6 @@ static void onConnected(GamepadPtr g) {
   gp = g;
   Serial.println("Gamepad connected!");
 }
-
 static void onDisconnected(GamepadPtr) {
   gp = nullptr;
   Serial.println("Gamepad disconnected!");
@@ -378,14 +504,12 @@ static Actions gamepadActions() {
 
   uint32_t now = millis();
   static RepeatKey repL, repR;
-  // Left/right: initial move immediate, then repeat like classic DAS-ish
+
   if (fireWithRepeat(leftHeld,  repL, now, 170, 90)) a.left = true;
   if (fireWithRepeat(rightHeld, repR, now, 170, 90)) a.right = true;
 
-  // Down: treated as held (soft drop)
-  a.down = downHeld;
+  a.down = downHeld; // soft drop while held
 
-  // Edge-trigger buttons
   static bool lastA = false, lastB = false, lastY = false;
   bool A = gp->a();
   bool B = gp->b();
@@ -408,7 +532,7 @@ void setup() {
   strip.clear();
   strip.show();
 
-  // Quick boot flash so you KNOW pixels are being written
+  // Boot flash so you KNOW pixels are being written
   strip.fill(strip.Color(20, 0, 0)); strip.show(); delay(120);
   strip.fill(strip.Color(0, 20, 0)); strip.show(); delay(120);
   strip.fill(strip.Color(0, 0, 20)); strip.show(); delay(120);
@@ -419,7 +543,8 @@ void setup() {
 
   resetGame();
 
-  Serial.println("\nTetris ready. Xbox: D-pad move, A=rotate, B=drop, Y=restart.");
+  Serial.println("\nTetris ready.");
+  Serial.println("Xbox: D-pad move, A=rotate, B=drop, Y=restart.");
   Serial.println("Serial: a/d/w/s/space, r=restart");
 }
 
@@ -448,7 +573,6 @@ void loop() {
     if (act.drop) {
       hardDrop();
     } else if (act.down) {
-      // soft drop faster while held
       if ((now - lastFallMs) >= 60) {
         lastFallMs = now;
         tryMove(0, +1);
