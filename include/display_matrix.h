@@ -11,7 +11,10 @@ public:
 
   void begin();
   void bootFlash();
-  void levelUpFlash();               // called when game reports level-up
+  
+  // --- UPDATED: Now accepts the new level to pick colors ---
+  void levelUpFlash(uint8_t nextLevel); 
+  
   void render(const TetrisGame& g, uint32_t nowMs);
 
 private:
@@ -31,7 +34,7 @@ private:
   uint8_t borderTimeShiftForLevel(uint8_t level) const;
   uint8_t tri8(uint8_t x) const;
   void wheel(uint8_t pos, uint8_t& r, uint8_t& g, uint8_t& b) const;
-  uint32_t arcadeBorderColor(uint8_t level, uint8_t x, uint8_t y, uint32_t nowMs) const;
+  uint32_t arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
 
 private:
   Adafruit_NeoPixel strip_;

@@ -47,6 +47,7 @@ void TetrisGame::reset() {
   level_ = 1;
   pieceSeq_ = 0;
   gameOver_ = false;
+  lastType_ = 0; // Reset tracking
 
   clearing_ = false;
   clearCount_ = 0;
@@ -102,7 +103,6 @@ void TetrisGame::updateLevel() {
   level_ = (linesCleared_ / 10) + 1;
 }
 
-// ✅ THIS is the line that got corrupted in your paste
 uint32_t TetrisGame::dropIntervalMs() const {
   int base = 700;
   int dec = (int)(level_ - 1) * 45;
@@ -192,6 +192,9 @@ void TetrisGame::applyLineClear(bool& levelUp) {
 }
 
 void TetrisGame::lockAndContinue(uint32_t nowMs, bool& levelUp) {
+  // --- NEW: Save the piece type to 'lastType_' before it is lost ---
+  lastType_ = cur_.type;
+
   placePieceToBoard(cur_);
 
   uint8_t rows[4];

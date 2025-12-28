@@ -14,12 +14,10 @@ static uint32_t lastFrameMs = 0;
 
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
-static bool aiMode = true;                 // <-- START WITH AI ON
-static constexpr uint32_t IDLE_TO_AI_MS = 8000;  // idle time to re-enable AI after human stops
+static bool aiMode = true;                 
+static constexpr uint32_t IDLE_TO_AI_MS = 8000;  
 
 static inline bool anyHumanAction(const Actions& a) {
-  // Only gameplay inputs count as “human activity”.
-  // Commands like aiProfileSet should NOT disable demo mode.
   return a.left || a.right || a.rotate || a.down || a.drop || a.restart;
 }
 
@@ -37,10 +35,6 @@ void setup() {
   lastHumanMs = millis();
 
   Serial.println("\nTetris ready.");
-  Serial.println("Xbox: D-pad move, A=rotate, B=drop, Y=restart.");
-  Serial.println("Serial: a/d/w/s/space, r=restart");
-  Serial.println("AI demo starts ON. Any input takes over instantly.");
-  Serial.println("AI speed profile: press 0=slow, 1=normal, 2=fast, 3=turbo(test)");
 }
 
 void loop() {
@@ -49,43 +43,37 @@ void loop() {
   uint32_t now = millis();
   Actions human = input.readActions();
 
-  // AI speed command (does not count as human input)
   if (human.aiProfileSet >= 0) {
     ai.setProfile((uint8_t)human.aiProfileSet);
-    Serial.printf("AI profile set to %d (0=slow 1=normal 2=fast 3=turbo)\n", human.aiProfileSet);
     human.aiProfileSet = -1;
   }
 
-  // Any human input cancels AI immediately
   if (anyHumanAction(human)) {
     lastHumanMs = now;
     if (aiMode) {
       aiMode = false;
       ai.reset();
-      Serial.println("AI demo off (human input).");
     }
   }
 
-  // Re-enter AI after idle period (only if human has taken over before)
   if (!aiMode && (now - lastHumanMs) > IDLE_TO_AI_MS) {
     aiMode = true;
     ai.reset();
-    Serial.println("AI demo on.");
   }
 
-  Actions a = human;
+  Actions act = human;
   if (aiMode) {
-    a = ai.think(game, now);
+    act = ai.think(game, now);
   }
 
-  auto tr = game.tick(now, a);
-  if (tr.levelUp) {
-    display.levelUpFlash();
-    Serial.printf("Level %u\n", game.level());
+  TetrisGame::TickResult res = game.tick(now, act);
+
+  // --- UPDATED: Pass the level to the flash function ---
+  if (res.levelUp) {
+    display.levelUpFlash(game.level());
   }
 
-  // Render ~30 FPS
-  if ((now - lastFrameMs) >= 33) {
+  if (now - lastFrameMs >= 15) {
     lastFrameMs = now;
     display.render(game, now);
   }

@@ -7,7 +7,7 @@ class TetrisGame {
 public:
   struct TickResult {
     bool levelUp = false;
-    bool linesCleared = false; // true when animation finishes and rows are removed
+    bool linesCleared = false; 
   };
 
   struct Piece {
@@ -38,14 +38,17 @@ public:
 
   const uint8_t (*board() const)[BOARD_W] { return board_; }
   Piece currentPiece() const { return cur_; }
-  uint8_t currentPieceId() const { return (uint8_t)(cur_.type + 1); } // 1..7
+  uint8_t currentPieceId() const { return (uint8_t)(cur_.type + 1); } 
+
+  // --- NEW: Command for the display to ask "what just dropped?" ---
+  uint8_t lastLockedPieceType() const { return lastType_; }
 
   // Line-clear animation helpers
   uint8_t clearingLineCount() const { return clearCount_; }
   const uint8_t* clearingLines() const { return clearRows_; }
   bool isClearingRow(uint8_t y) const;
-  uint8_t clearingAlpha(uint32_t nowMs) const;            // 255 -> 0
-  uint32_t clearingElapsedMs(uint32_t nowMs) const;       // 0..duration
+  uint8_t clearingAlpha(uint32_t nowMs) const;            
+  uint32_t clearingElapsedMs(uint32_t nowMs) const;       
   uint32_t clearDurationMs() const { return CLEAR_DURATION_MS; }
 
   void getCurrentPieceBlocks(Cell* out, uint8_t& count) const;
@@ -75,6 +78,9 @@ private:
   uint8_t board_[BOARD_H][BOARD_W] = {};
   Piece cur_;
   bool gameOver_ = false;
+
+  // --- NEW: Memory of the last dropped piece ---
+  uint8_t lastType_ = 0; 
 
   // Line clear fade animation state
   bool clearing_ = false;
