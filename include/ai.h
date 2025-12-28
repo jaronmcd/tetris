@@ -5,6 +5,10 @@
 
 class TetrisAI {
 public:
+  // 0=slow, 1=normal, 2=fast, 3=turbo(test)
+  void setProfile(uint8_t p);
+  uint8_t profile() const { return profile_; }
+
   void reset();
   Actions think(const TetrisGame& g, uint32_t nowMs);
 
@@ -25,8 +29,11 @@ private:
   Plan computePlan(const TetrisGame& g) const;
 
   uint32_t jitterMs(uint32_t base, uint32_t spread) const;
+  uint32_t scaleMs(uint32_t v) const;
 
 private:
+  uint8_t profile_ = 1;
+
   uint32_t lastPieceSeq_ = 0;
 
   Phase phase_ = WAIT_THINK;

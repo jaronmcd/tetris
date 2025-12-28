@@ -124,6 +124,27 @@ uint32_t TetrisAI::jitterMs(uint32_t base, uint32_t spread) const {
   return (uint32_t)v;
 }
 
+uint32_t TetrisAI::scaleMs(uint32_t v) const {
+  // Multipliers per profile:
+  // 0 slow:  1.6x
+  // 1 normal:1.0x
+  // 2 fast:  0.7x
+  // 3 turbo: 0.35x
+  static const uint16_t num[4] = { 16, 10, 7, 35 };
+  static const uint16_t den[4] = { 10, 10, 10, 100 };
+  uint8_t p = profile_;
+  if (p > 3) p = 3;
+  uint32_t out = (v * (uint32_t)num[p]) / (uint32_t)den[p];
+  if (out < 5) out = 5;
+  return out;
+}
+
+void TetrisAI::setProfile(uint8_t p) {
+  if (p > 3) p = 3;
+  profile_ = p;
+  reset();
+}
+
 void TetrisAI::reset() {
   lastPieceSeq_ = 0;
   phase_ = WAIT_THINK;
@@ -219,12 +240,12 @@ Actions TetrisAI::think(const TetrisGame& g, uint32_t nowMs) {
 
     // Human reaction time before acting (varies a bit)
     phase_ = WAIT_THINK;
-    phaseUntilMs_ = nowMs + jitterMs(220, 180); // ~40..400ms
+    phaseUntilMs_ = nowMs + scaleMs(jitterMs(220, 180)); // ~40..400ms (scaled)
 
     // Reset pacing + soft-drop pulsing
     nextStepMs_ = 0;
     downPulseOn_ = true;
-    nextDownToggleMs_ = nowMs + jitterMs(520, 180); // first toggle in ~340..700ms
+    nextDownToggleMs_ = nowMs + scaleMs(jitterMs(520, 180)); // first toggle in ~340..700ms (scaled)
   }
 
   if (!plan_.valid) return a;
@@ -242,8 +263,8 @@ Actions TetrisAI::think(const TetrisGame& g, uint32_t nowMs) {
   const uint8_t lvl = g.level();
 
   // Pacing: higher levels press a bit faster, still human-ish
-  uint32_t rotateDelay = (lvl < 6) ? 140 : (lvl < 12 ? 120 : 105);
-  uint32_t moveDelay   = (lvl < 6) ? 120 : (lvl < 12 ? 105 : 90);
+  uint32_t rotateDelayBase = (lvl < 6) ? 140 : (lvl < 12 ? 120 : 105);
+  uint32_t moveDelayBase   = (lvl < 6) ? 120 : (lvl < 12 ? 105 : 90);
 
   auto p = g.currentPiece();
 
@@ -251,11 +272,11 @@ Actions TetrisAI::think(const TetrisGame& g, uint32_t nowMs) {
   if (phase_ == ROTATE_TO_TARGET) {
     if ((p.rot & 3) != (plan_.rot & 3)) {
       a.rotate = true;
-      nextStepMs_ = nowMs + jitterMs(rotateDelay, 25);
+      nextStepMs_ = nowMs + scaleMs(jitterMs(rotateDelayBase, 25));
       return a;
     }
     phase_ = MOVE_TO_TARGET;
-    nextStepMs_ = nowMs + jitterMs(60, 30);
+    nextStepMs_ = nowMs + scaleMs(jitterMs(60, 30));
     return a;
   }
 
@@ -263,50 +284,57 @@ Actions TetrisAI::think(const TetrisGame& g, uint32_t nowMs) {
   if (phase_ == MOVE_TO_TARGET) {
     if (p.x < plan_.x) {
       a.right = true;
-      nextStepMs_ = nowMs + jitterMs(moveDelay, 25);
+      nextStepMs_ = nowMs + scaleMs(jitterMs(moveDelayBase, 25));
       return a;
     }
     if (p.x > plan_.x) {
       a.left = true;
-      nextStepMs_ = nowMs + jitterMs(moveDelay, 25);
+      nextStepMs_ = nowMs + scaleMs(jitterMs(moveDelayBase, 25));
       return a;
     }
 
     // Aligned: start soft dropping (no hard drop)
     phase_ = SOFT_DROP;
-    nextStepMs_ = nowMs + jitterMs(40, 30);
+    nextStepMs_ = nowMs + scaleMs(jitterMs(40, 30));
     return a;
   }
 
   // Soft drop phase: hold down in pulses so it looks human (not a perfect constant hold)
   if (phase_ == SOFT_DROP) {
+    // Turbo profile is for quickly testing level progression (not "human")
+    if (profile_ == 3) {
+      a.down = true;
+      // occasional hard drop to speed up tests
+      if ((esp_random() % 100) < 35) a.drop = true;
+      nextStepMs_ = nowMs + scaleMs(jitterMs(45, 15));
+      return a;
+    }
+
     if (nowMs >= nextDownToggleMs_) {
       downPulseOn_ = !downPulseOn_;
       // On a bit longer than off
-      nextDownToggleMs_ = nowMs + (downPulseOn_ ? jitterMs(520, 180) : jitterMs(160, 80));
+      nextDownToggleMs_ = nowMs + scaleMs(downPulseOn_ ? jitterMs(520, 180) : jitterMs(160, 80));
     }
 
-    // Occasionally “hesitate” (no input) even while dropping
-    // (very small chance)
+    // Occasionally “hesitate” (no input) even while dropping (very small chance)
     if ((esp_random() % 100) < 3) {
-      nextStepMs_ = nowMs + jitterMs(120, 60);
+      nextStepMs_ = nowMs + scaleMs(jitterMs(120, 60));
       return a;
     }
 
     a.down = downPulseOn_;
 
-    // Also occasionally tap left/right if we got nudged by timing (rare)
-    // This keeps it from missing by 1 column if gravity moved while thinking.
+    // Occasionally nudge if we drifted from target (rare)
     int8_t dx = plan_.x - p.x;
     if (dx != 0 && (esp_random() % 100) < 25) {
       if (dx > 0) a.right = true;
       else a.left = true;
-      nextStepMs_ = nowMs + jitterMs(moveDelay, 25);
+      nextStepMs_ = nowMs + scaleMs(jitterMs(moveDelayBase, 25));
       return a;
     }
 
     // Keep calling frequently so down pulses feel responsive
-    nextStepMs_ = nowMs + jitterMs(45, 20);
+    nextStepMs_ = nowMs + scaleMs(jitterMs(45, 20));
     return a;
   }
 

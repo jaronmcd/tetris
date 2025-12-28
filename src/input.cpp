@@ -55,6 +55,7 @@ Actions InputManager::readSerial() {
     else if (ch == 's' || ch == 'S') a.down = true;
     else if (ch == ' ') a.drop = true;
     else if (ch == 'r' || ch == 'R') a.restart = true;
+    else if (ch >= '0' && ch <= '3') a.aiProfileSet = (int8_t)(ch - '0');
   }
   return a;
 }
@@ -102,5 +103,8 @@ Actions InputManager::readActions() {
   out.down = s.down || g.down;
   out.drop = s.drop || g.drop;
   out.restart = s.restart || g.restart;
+
+  // Commands (serial-only)
+  out.aiProfileSet = s.aiProfileSet;
   return out;
 }
