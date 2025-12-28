@@ -30,7 +30,6 @@ void MatrixDisplay::bootFlash() {
 }
 
 void MatrixDisplay::levelUpFlash() {
-  // Quick arcade “pop” (brief, slightly brighter)
   uint8_t oldB = BRIGHTNESS;
 
   strip_.setBrightness(40);
@@ -53,12 +52,23 @@ void MatrixDisplay::levelUpFlash() {
 
 uint16_t MatrixDisplay::XY(uint8_t x, uint8_t y) const {
   if (x >= MATRIX_W || y >= MATRIX_H) return 0;
+
+  // Flip X so left/right feel correct
+  uint8_t xx = (uint8_t)(MATRIX_W - 1 - x);
+
   uint8_t yy = MATRIX_BOTTOM_UP ? (MATRIX_H - 1 - y) : y;
 
-  if (!SERPENTINE) return (uint16_t)yy * MATRIX_W + x;
-  if ((yy & 1) == 0) return (uint16_t)yy * MATRIX_W + x;
-  return (uint16_t)yy * MATRIX_W + (MATRIX_W - 1 - x);
+  if (!SERPENTINE) {
+    return (uint16_t)yy * MATRIX_W + xx;
+  }
+
+  if ((yy & 1) == 0) {
+    return (uint16_t)yy * MATRIX_W + xx;
+  }
+
+  return (uint16_t)yy * MATRIX_W + (MATRIX_W - 1 - xx);
 }
+
 
 void MatrixDisplay::setPixel(uint8_t x, uint8_t y, uint32_t c) {
   strip_.setPixelColor(XY(x, y), c);
@@ -77,6 +87,17 @@ uint8_t MatrixDisplay::themeIndex(uint8_t level) const {
 
 uint32_t MatrixDisplay::pieceColor(uint8_t level, uint8_t pieceId) const {
   return rgb(THEMES[themeIndex(level)][pieceId]);
+}
+
+uint32_t MatrixDisplay::scaleColor(uint32_t c, uint8_t alpha) const {
+  uint8_t r = (uint8_t)((c >> 16) & 0xFF);
+  uint8_t g = (uint8_t)((c >> 8) & 0xFF);
+  uint8_t b = (uint8_t)(c & 0xFF);
+
+  r = (uint8_t)(((uint16_t)r * alpha) >> 8);
+  g = (uint8_t)(((uint16_t)g * alpha) >> 8);
+  b = (uint8_t)(((uint16_t)b * alpha) >> 8);
+  return strip_.Color(r, g, b);
 }
 
 uint8_t MatrixDisplay::borderTimeShiftForLevel(uint8_t level) const {
@@ -154,7 +175,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
 
   const uint8_t lvl = g.level();
 
-  // Border (arcade)
+  // Border
   for (uint8_t y = 0; y < MATRIX_H; y++) {
     for (uint8_t x = 0; x < MATRIX_W; x++) {
       bool inBoardX = (x >= BOARD_OFFSET_X) && (x < (BOARD_OFFSET_X + BOARD_W));
@@ -165,26 +186,45 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     }
   }
 
-  // Locked blocks
+  // Locked blocks (with line-clear flash + visible fade)
   auto b = g.board();
+  const bool clearing = g.isClearingLines();
+  const uint32_t elapsed = clearing ? g.clearingElapsedMs(nowMs) : 0;
+  const uint8_t alphaLin = g.clearingAlpha(nowMs);
+  // Gamma-ish so it’s visible at low brightness: alpha^2
+  const uint8_t alpha = (uint8_t)(((uint16_t)alphaLin * (uint16_t)alphaLin) >> 8);
+
   for (uint8_t by = 0; by < BOARD_H; by++) {
     for (uint8_t bx = 0; bx < BOARD_W; bx++) {
       uint8_t id = b[by][bx];
-      if (id) {
-        setPixel(BOARD_OFFSET_X + bx, BOARD_OFFSET_Y + by, pieceColor(lvl, id));
+      if (!id) continue;
+
+      uint32_t c = pieceColor(lvl, id);
+
+      if (clearing && g.isClearingRow(by)) {
+        // Obvious arcade flash, then fade
+        if (elapsed < 60) {
+          c = strip_.Color(255, 255, 255);
+        } else {
+          c = scaleColor(c, alpha);
+        }
       }
+
+      setPixel(BOARD_OFFSET_X + bx, BOARD_OFFSET_Y + by, c);
     }
   }
 
-  // Current piece
+  // Current piece (skip while clearing)
   if (!g.isGameOver()) {
-    TetrisGame::Cell cells[4];
-    uint8_t n = 0;
-    g.getCurrentPieceBlocks(cells, n);
-    uint8_t id = g.currentPieceId();
-    uint32_t c = pieceColor(lvl, id);
-    for (uint8_t i = 0; i < n; i++) {
-      setPixel(BOARD_OFFSET_X + (uint8_t)cells[i].x, BOARD_OFFSET_Y + (uint8_t)cells[i].y, c);
+    if (!clearing) {
+      TetrisGame::Cell cells[4];
+      uint8_t n = 0;
+      g.getCurrentPieceBlocks(cells, n);
+      uint8_t id = g.currentPieceId();
+      uint32_t c = pieceColor(lvl, id);
+      for (uint8_t i = 0; i < n; i++) {
+        setPixel(BOARD_OFFSET_X + (uint8_t)cells[i].x, BOARD_OFFSET_Y + (uint8_t)cells[i].y, c);
+      }
     }
   } else {
     bool on = ((nowMs / 350) & 1) == 0;

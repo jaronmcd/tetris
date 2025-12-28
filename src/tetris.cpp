@@ -3,7 +3,6 @@
 #include <string.h>
 #include "esp_system.h"
 
-
 static const uint16_t SHAPES[7][4] = {
   { 0x0F00, 0x2222, 0x00F0, 0x4444 }, // I
   { 0x6600, 0x6600, 0x6600, 0x6600 }, // O
@@ -30,7 +29,7 @@ bool TetrisGame::fits(const uint8_t board[BOARD_H][BOARD_W], uint8_t type, uint8
 
       if (bx < 0 || bx >= BOARD_W) return false;
       if (by >= BOARD_H) return false;
-      if (by < 0) continue; // above top is okay
+      if (by < 0) continue;
       if (board[by][bx] != 0) return false;
     }
   }
@@ -49,10 +48,37 @@ void TetrisGame::reset() {
   pieceSeq_ = 0;
   gameOver_ = false;
 
+  clearing_ = false;
+  clearCount_ = 0;
+  clearStartMs_ = 0;
+
   bagIdx_ = 7;
   refillBag();
   spawnNext();
   lastFallMs_ = millis();
+}
+
+bool TetrisGame::isClearingRow(uint8_t y) const {
+  if (!clearing_) return false;
+  for (uint8_t i = 0; i < clearCount_; i++) {
+    if (clearRows_[i] == y) return true;
+  }
+  return false;
+}
+
+uint32_t TetrisGame::clearingElapsedMs(uint32_t nowMs) const {
+  if (!clearing_) return 0;
+  uint32_t elapsed = (nowMs >= clearStartMs_) ? (nowMs - clearStartMs_) : 0;
+  if (elapsed > CLEAR_DURATION_MS) elapsed = CLEAR_DURATION_MS;
+  return elapsed;
+}
+
+uint8_t TetrisGame::clearingAlpha(uint32_t nowMs) const {
+  if (!clearing_) return 255;
+  uint32_t elapsed = (nowMs >= clearStartMs_) ? (nowMs - clearStartMs_) : 0;
+  if (elapsed >= CLEAR_DURATION_MS) return 0;
+  uint32_t a = 255 - (elapsed * 255) / CLEAR_DURATION_MS;
+  return (uint8_t)a;
 }
 
 void TetrisGame::refillBag() {
@@ -76,6 +102,7 @@ void TetrisGame::updateLevel() {
   level_ = (linesCleared_ / 10) + 1;
 }
 
+// ✅ THIS is the line that got corrupted in your paste
 uint32_t TetrisGame::dropIntervalMs() const {
   int base = 700;
   int dec = (int)(level_ - 1) * 45;
@@ -109,24 +136,43 @@ void TetrisGame::placePieceToBoard(const Piece& p) {
   }
 }
 
-void TetrisGame::clearLines(bool& levelUp) {
-  uint8_t clearedThis = 0;
-
+uint8_t TetrisGame::findFullRows(uint8_t* outRows) const {
+  uint8_t count = 0;
   for (int y = BOARD_H - 1; y >= 0; y--) {
     bool full = true;
     for (uint8_t x = 0; x < BOARD_W; x++) {
       if (board_[y][x] == 0) { full = false; break; }
     }
     if (full) {
-      clearedThis++;
-      for (int yy = y; yy > 0; yy--) {
-        memcpy(board_[yy], board_[yy - 1], BOARD_W);
-      }
-      memset(board_[0], 0, BOARD_W);
-      y++; // re-check same row after shift
+      outRows[count++] = (uint8_t)y;
+      if (count >= 4) break;
     }
   }
+  return count;
+}
 
+void TetrisGame::beginLineClear(uint32_t nowMs, const uint8_t* rows, uint8_t count) {
+  clearing_ = true;
+  clearCount_ = count;
+  for (uint8_t i = 0; i < 4; i++) clearRows_[i] = 0;
+  for (uint8_t i = 0; i < count && i < 4; i++) clearRows_[i] = rows[i];
+  clearStartMs_ = nowMs;
+}
+
+void TetrisGame::applyLineClear(bool& levelUp) {
+  uint8_t newBoard[BOARD_H][BOARD_W];
+  memset(newBoard, 0, sizeof(newBoard));
+
+  int dst = BOARD_H - 1;
+  for (int y = BOARD_H - 1; y >= 0; y--) {
+    if (isClearingRow((uint8_t)y)) continue;
+    memcpy(newBoard[dst], board_[y], BOARD_W);
+    dst--;
+  }
+
+  memcpy(board_, newBoard, sizeof(board_));
+
+  uint8_t clearedThis = clearCount_;
   if (clearedThis > 0) {
     linesCleared_ += clearedThis;
 
@@ -145,13 +191,21 @@ void TetrisGame::clearLines(bool& levelUp) {
   }
 }
 
-void TetrisGame::lockAndContinue(bool& levelUp) {
+void TetrisGame::lockAndContinue(uint32_t nowMs, bool& levelUp) {
   placePieceToBoard(cur_);
-  clearLines(levelUp);
+
+  uint8_t rows[4];
+  uint8_t cnt = findFullRows(rows);
+  if (cnt > 0) {
+    beginLineClear(nowMs, rows, cnt);
+    return;
+  }
+
   spawnNext();
+  lastFallMs_ = nowMs;
 }
 
-void TetrisGame::tryMove(int8_t dx, int8_t dy, bool& levelUp) {
+void TetrisGame::tryMove(uint32_t nowMs, int8_t dx, int8_t dy, bool& levelUp) {
   int8_t nx = cur_.x + dx;
   int8_t ny = cur_.y + dy;
 
@@ -159,7 +213,7 @@ void TetrisGame::tryMove(int8_t dx, int8_t dy, bool& levelUp) {
     cur_.x = nx;
     cur_.y = ny;
   } else if (dy == 1) {
-    lockAndContinue(levelUp);
+    lockAndContinue(nowMs, levelUp);
   }
 }
 
@@ -170,12 +224,12 @@ void TetrisGame::tryRotate() {
   if (fits(board_, cur_.type, nr, cur_.x + 1, cur_.y)) { cur_.x += 1; cur_.rot = nr; return; }
 }
 
-void TetrisGame::hardDrop(bool& levelUp) {
+void TetrisGame::hardDrop(uint32_t nowMs, bool& levelUp) {
   while (fits(board_, cur_.type, cur_.rot, cur_.x, cur_.y + 1)) {
     cur_.y += 1;
     score_ += 1;
   }
-  lockAndContinue(levelUp);
+  lockAndContinue(nowMs, levelUp);
 }
 
 TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
@@ -185,15 +239,27 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
     reset();
     return tr;
   }
-
   if (gameOver_) return tr;
 
-  if (a.left)  tryMove(-1, 0, tr.levelUp);
-  if (a.right) tryMove(+1, 0, tr.levelUp);
+  if (clearing_) {
+    if ((nowMs - clearStartMs_) >= CLEAR_DURATION_MS) {
+      applyLineClear(tr.levelUp);
+      clearing_ = false;
+      clearCount_ = 0;
+      clearStartMs_ = 0;
+      spawnNext();
+      lastFallMs_ = nowMs;
+      tr.linesCleared = true;
+    }
+    return tr;
+  }
+
+  if (a.left)  tryMove(nowMs, -1, 0, tr.levelUp);
+  if (a.right) tryMove(nowMs, +1, 0, tr.levelUp);
   if (a.rotate) tryRotate();
 
   if (a.drop) {
-    hardDrop(tr.levelUp);
+    hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
     return tr;
   }
@@ -201,14 +267,14 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   if (a.down) {
     if ((nowMs - lastFallMs_) >= 60) {
       lastFallMs_ = nowMs;
-      tryMove(0, +1, tr.levelUp);
+      tryMove(nowMs, 0, +1, tr.levelUp);
     }
     return tr;
   }
 
   if ((nowMs - lastFallMs_) >= dropIntervalMs()) {
     lastFallMs_ = nowMs;
-    tryMove(0, +1, tr.levelUp);
+    tryMove(nowMs, 0, +1, tr.levelUp);
   }
 
   return tr;

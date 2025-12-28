@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <Adafruit_NeoPixel.h>
+
 #include "config.h"
 #include "tetris.h"
 
@@ -22,6 +23,9 @@ private:
   // Themes / level visuals
   uint8_t themeIndex(uint8_t level) const;
   uint32_t pieceColor(uint8_t level, uint8_t pieceId) const;
+
+  // Color helpers
+  uint32_t scaleColor(uint32_t c, uint8_t alpha) const; // alpha: 0..255
 
   // Arcade border
   uint8_t borderTimeShiftForLevel(uint8_t level) const;
