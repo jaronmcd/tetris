@@ -24,6 +24,7 @@ static bool     g_isFading = false;
 static uint32_t g_fadeStartMs = 0;
 static uint8_t  g_fadeFromLevel = 0;
 static uint8_t  g_fadeToLevel = 0;
+static uint32_t g_fadeDuration = 2000; // 2.0 seconds
 
 // Helper: Convert RGB to Hue (0-65535)
 static uint16_t rgbToHue(uint32_t c) {
@@ -48,7 +49,6 @@ static uint16_t rgbToHue(uint32_t c) {
 
 // Helper: Linear Interpolate between two RGB colors
 static uint32_t lerpColorRGB(uint32_t c1, uint32_t c2, uint8_t step) {
-  // step is 0..255
   if (step == 0) return c1;
   if (step == 255) return c2;
 
@@ -84,17 +84,12 @@ void MatrixDisplay::bootFlash() {
   strip_.clear(); strip_.show();
 }
 
-// --- LEVEL UP: TRIGGER CROSS-FADE (NON-BLOCKING) ---
+// --- LEVEL UP FLASH ---
 void MatrixDisplay::levelUpFlash(uint8_t nextLevel) {
-  // We simply set the state here. The render loop handles the rest.
   g_isFading = true;
   g_fadeStartMs = millis();
   g_fadeToLevel = nextLevel;
   g_fadeFromLevel = (nextLevel > 1) ? (nextLevel - 1) : 0;
-  
-  // Optional: Tiny brightness pop that doesn't block gameplay
-  // We can't delay here, so we skip the flash or handle it elsewhere.
-  // For smooth gameplay, we do nothing blocking.
 }
 
 uint16_t MatrixDisplay::XY(uint8_t x, uint8_t y) const {
@@ -121,7 +116,6 @@ uint8_t MatrixDisplay::themeIndex(uint8_t level) const {
   return (uint8_t)((level - 1) % NUM_THEMES);
 }
 
-// Modified pieceColor to optionally blend themes
 uint32_t MatrixDisplay::pieceColor(uint8_t level, uint8_t pieceId) const {
   if (pieceId > 7) pieceId = 0;
   return rgb(THEMES[themeIndex(level)][pieceId]);
@@ -149,20 +143,58 @@ uint8_t MatrixDisplay::tri8(uint8_t x) const { return 0; }
 void MatrixDisplay::wheel(uint8_t, uint8_t&, uint8_t&, uint8_t&) const {}
 
 // -------------------------------------------------------------------------
-// BORDER COLOR
+// BORDER COLOR (Synchronized "Celebration Roll")
 // -------------------------------------------------------------------------
 uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const {
-  uint32_t duration = 600; 
-  uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : duration;
-  uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
+  
+  uint16_t finalHue;
 
-  uint16_t baseHue = (y < splitY) ? g_hueNew : g_hueOld;
+  // --- 1. LEVEL UP CELEBRATION (Synchronized to Block Fade) ---
+  if (g_isFading) {
+    uint32_t elapsed = nowMs - g_fadeStartMs;
+    if (elapsed > g_fadeDuration) elapsed = g_fadeDuration; // Safety clamp
 
-  uint16_t rawScroll = (uint16_t)((x + y) * 120 - (nowMs * 30));
-  uint16_t rippleOffset = (rawScroll >> 5); 
+    // We want exactly 2 full loops (14 colors) over the total duration.
+    // Total steps = 14.
+    // Current Step = (elapsed * 14) / duration.
+    uint32_t totalSteps = 14; 
+    uint32_t currentStep = (elapsed * totalSteps) / g_fadeDuration;
+    if (currentStep >= totalSteps) currentStep = totalSteps - 1;
 
-  uint16_t finalHue = baseHue + rippleOffset;
+    // Which color in the theme (0..6)
+    uint8_t cIdx = currentStep % 7;
+    uint8_t nextCIdx = (cIdx + 1) % 7;
 
+    // Theme Colors
+    uint8_t tIdx = themeIndex(g_fadeToLevel);
+    uint32_t c1 = THEMES[tIdx][cIdx + 1];
+    uint32_t c2 = THEMES[tIdx][nextCIdx + 1];
+
+    // Sub-wipe calculation for waterfall effect
+    // How much time has passed within this specific step?
+    uint32_t stepDuration = g_fadeDuration / totalSteps; // ~142ms
+    uint32_t stepStartMs = (currentStep * g_fadeDuration) / totalSteps;
+    uint32_t subTime = elapsed - stepStartMs;
+    
+    // Pixels ABOVE this line are the NEXT color
+    uint8_t splitY = (subTime * MATRIX_H) / stepDuration;
+
+    uint32_t targetC = (y < splitY) ? c2 : c1;
+    finalHue = rgbToHue(targetC);
+
+  } else {
+    // --- 2. STANDARD MODE: COMPLEMENTARY LOGIC ---
+    uint32_t duration = 600; 
+    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : duration;
+    uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
+
+    uint16_t baseHue = (y < splitY) ? g_hueNew : g_hueOld;
+    uint16_t rawScroll = (uint16_t)((x + y) * 120 - (nowMs * 30));
+    uint16_t rippleOffset = (rawScroll >> 5); 
+    finalHue = baseHue + rippleOffset;
+  }
+
+  // --- 3. STATIC TEXTURE ---
   bool isMeshGap = ((x ^ y) & 1);
   uint8_t val = isMeshGap ? 40 : 140; 
   uint8_t sat = 200;
@@ -176,7 +208,8 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   const uint8_t lvl = g.level();
   uint8_t tIdx = themeIndex(lvl);
 
-  // --- HANDLE BORDER LOGIC ---
+  // --- UPDATE STANDARD BORDER STATE ---
+  // We keep this up to date so the fade lands on the correct "Complementary" color
   uint8_t locked = g.lastLockedPieceType();
   if (g_firstRun) {
     g_prevLocked = locked;
@@ -193,15 +226,14 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     g_prevLocked = locked;
   }
 
-  // --- HANDLE BLOCK FADE LOGIC ---
-  uint8_t fadeStep = 255; // Default: fully new color
+  // --- UPDATE FADE STATE ---
+  uint8_t fadeStep = 255; 
   if (g_isFading) {
     uint32_t elapsed = nowMs - g_fadeStartMs;
-    if (elapsed >= 2000) { // 2.0 Seconds fade
+    if (elapsed >= g_fadeDuration) { 
       g_isFading = false;
     } else {
-      // Scale 0..2000ms to 0..255
-      fadeStep = (uint8_t)((elapsed * 255) / 2000);
+      fadeStep = (uint8_t)((elapsed * 255) / g_fadeDuration);
     }
   }
 
@@ -229,15 +261,11 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       if (!id) continue;
 
       uint32_t c;
-
       if (g_isFading) {
-        // BLEND COLORS: Old Theme -> New Theme
         uint32_t cOld = pieceColor(g_fadeFromLevel, id);
         uint32_t cNew = pieceColor(g_fadeToLevel, id);
-        uint32_t blended = lerpColorRGB(cOld, cNew, fadeStep);
-        c = blended;
+        c = lerpColorRGB(cOld, cNew, fadeStep);
       } else {
-        // Standard single color
         c = pieceColor(lvl, id);
       }
 
