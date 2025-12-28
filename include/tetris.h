@@ -24,6 +24,8 @@ public:
   void begin();
   void reset();
 
+  uint32_t pieceSeq() const { return pieceSeq_; }
+
   // Update game using Actions; returns if level changed this tick.
   TickResult tick(uint32_t nowMs, const Actions& a);
 
@@ -52,6 +54,7 @@ private:
   void clearLines(bool& levelUp);
   void updateLevel();
   uint32_t dropIntervalMs() const;
+  uint32_t pieceSeq_ = 0;
 
   void tryMove(int8_t dx, int8_t dy, bool& levelUp);
   void tryRotate();

@@ -46,6 +46,7 @@ void TetrisGame::reset() {
   score_ = 0;
   linesCleared_ = 0;
   level_ = 1;
+  pieceSeq_ = 0;
   gameOver_ = false;
 
   bagIdx_ = 7;
@@ -84,6 +85,7 @@ uint32_t TetrisGame::dropIntervalMs() const {
 }
 
 void TetrisGame::spawnNext() {
+  pieceSeq_++;
   cur_.type = nextPieceType();
   cur_.rot = 0;
   cur_.x = 3;
