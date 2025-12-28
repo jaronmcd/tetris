@@ -51,12 +51,14 @@ void loop() {
   if (anyHumanAction(human)) {
     lastHumanMs = now;
     if (aiMode) {
+      Serial.println(">> Human Control Active"); // Added feedback for mode switch
       aiMode = false;
       ai.reset();
     }
   }
 
   if (!aiMode && (now - lastHumanMs) > IDLE_TO_AI_MS) {
+    Serial.println(">> AI Demo Mode Active"); // Added feedback for mode switch
     aiMode = true;
     ai.reset();
   }
@@ -70,7 +72,20 @@ void loop() {
 
   // --- UPDATED: Pass the level to the flash function ---
   if (res.levelUp) {
+    // FIX: Print to console first
+    Serial.print("!!! LEVEL UP !!! Entering Level: ");
+    Serial.println(game.level());
+    
+    // Then trigger visual flash
     display.levelUpFlash(game.level());
+  }
+
+  // Optional: Also print score/lines for debugging
+  if (res.linesCleared) {
+      Serial.print("Lines Cleared. Total Lines: ");
+      Serial.print(game.lines());
+      Serial.print(" Score: ");
+      Serial.println(game.score());
   }
 
   if (now - lastFrameMs >= 15) {
