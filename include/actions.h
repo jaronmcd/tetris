@@ -17,4 +17,8 @@ struct Actions {
   // Debug: force trigger line-clear FX for testing (serial-only)
   // 0 = none, 1..4 = clear that many lines
   uint8_t testClearLines = 0;
+
+  // Debug: bump level up/down for testing palettes & transitions (serial-only)
+  // 0 = none, negative = down, positive = up
+  int8_t testLevelDelta = 0;
 };

@@ -72,6 +72,10 @@ void setup() {
   lastHumanMs = millis();
 
   Serial.println("\nTetris ready.");
+  Serial.println("Serial debug keys:");
+  Serial.println("  z/x/c/v = force 1/2/3/4-line clear FX (test mode)");
+  Serial.println("  [ / ]   = level -1 / +1 (animates transition, test mode)");
+  Serial.println("  { / }   = level -10 / +10 (animates transition, test mode)\n");
 }
 
 void loop() {
@@ -105,9 +109,29 @@ void loop() {
     act = ai.think(game, now);
   }
 
+  // Serial-only debug: step levels for testing colors/transitions.
+  // This works in BOTH AI demo mode and human mode.
+  if (human.testLevelDelta != 0) {
+    uint8_t from = game.level();
+    int target = (int)from + (int)human.testLevelDelta;
+    if (target < 1) target = 1;
+    if (target > 99) target = 99;
+
+    if ((uint8_t)target != from) {
+      Serial.print(">> DEBUG LEVEL: ");
+      Serial.print(from);
+      Serial.print(" -> ");
+      Serial.println((uint8_t)target);
+
+      game.debugSetLevel(now, (uint8_t)target);
+      display.levelTransition(from, (uint8_t)target);
+    }
+  }
+
 
   // Always pass through serial-only debug commands, even in AI mode.
   act.testClearLines = human.testClearLines;
+  act.testLevelDelta = human.testLevelDelta;
 
   // If human, always true. If AI, check the config.
   bool allowHighScore = (!aiMode) || (AI_SAVES_HIGH_SCORE);

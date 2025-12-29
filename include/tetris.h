@@ -37,6 +37,10 @@ public:
   // Debug: force a 1/2/3/4-line clear animation for FX testing (does not award score/lines, and disables high scores for this run).
   void debugForceLineClear(uint32_t nowMs, uint8_t lines);
 
+  // Debug: manually set the level for testing palettes/transitions. This marks the
+  // run as a test so highscores won't be saved.
+  void debugSetLevel(uint32_t nowMs, uint8_t level);
+
 
   bool isGameOver() const { return gameOver_; }
   bool isClearingLines() const { return clearing_; }

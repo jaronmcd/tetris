@@ -60,6 +60,16 @@ Actions InputManager::readSerial() {
     else if (ch == 'x' || ch == 'X') a.testClearLines = 2;
     else if (ch == 'c' || ch == 'C') a.testClearLines = 3;
     else if (ch == 'v' || ch == 'V') a.testClearLines = 4;
+
+    // Debug: level stepping (serial-only)
+    //   ]  = level +1
+    //   [  = level -1
+    //   }  = level +10
+    //   {  = level -10
+    else if (ch == ']') a.testLevelDelta += 1;
+    else if (ch == '[') a.testLevelDelta -= 1;
+    else if (ch == '}') a.testLevelDelta += 10;
+    else if (ch == '{') a.testLevelDelta -= 10;
   }
   return a;
 }
@@ -111,5 +121,6 @@ Actions InputManager::readActions() {
   // Commands (serial-only)
   out.aiProfileSet = s.aiProfileSet;
   out.testClearLines = s.testClearLines;
+  out.testLevelDelta = s.testLevelDelta;
   return out;
 }

@@ -136,20 +136,28 @@ static uint16_t pickBorderHueForLevel(uint8_t level) {
 }
 
 
-void MatrixDisplay::levelUpFlash(uint8_t nextLevel) {
+void MatrixDisplay::levelTransition(uint8_t fromLevel, uint8_t toLevel) {
+  if (fromLevel < 1) fromLevel = 1;
+  if (toLevel < 1) toLevel = 1;
+
   uint32_t now = millis();
 
   // Palette fade across the playfield
   g_isFading = true;
   g_fadeStartMs = now;
-  g_fadeToLevel = nextLevel;
-  g_fadeFromLevel = (nextLevel > 1) ? (uint8_t)(nextLevel - 1) : (uint8_t)1;
+  g_fadeFromLevel = fromLevel;
+  g_fadeToLevel = toLevel;
 
   // Border "waterfall" to celebrate the level transition
   g_waterfallActive = true;
   g_waterfallStartMs = now;
-  g_waterfallFromLevel = g_fadeFromLevel;
-  g_waterfallToLevel = g_fadeToLevel;
+  g_waterfallFromLevel = fromLevel;
+  g_waterfallToLevel = toLevel;
+}
+
+void MatrixDisplay::levelUpFlash(uint8_t nextLevel) {
+  uint8_t from = (nextLevel > 1) ? (uint8_t)(nextLevel - 1) : (uint8_t)1;
+  levelTransition(from, nextLevel);
 }
 
 

@@ -16,6 +16,10 @@ public:
   void bootFlash();
   void levelUpFlash(uint8_t nextLevel);
 
+  // Debug / test helper: animate the palette/border transition between ANY two levels.
+  // (Used by serial level-stepping keys.)
+  void levelTransition(uint8_t fromLevel, uint8_t toLevel);
+
   // Optional: Boot splash/logo screen (skippable)
   void showBootLogo(uint32_t durationMs, AbortFn abortFn = nullptr);
 

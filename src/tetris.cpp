@@ -214,6 +214,24 @@ void TetrisGame::debugForceLineClear(uint32_t nowMs, uint8_t lines) {
 
   beginLineClear(nowMs, rows, lines);
 }
+
+void TetrisGame::debugSetLevel(uint32_t nowMs, uint8_t level) {
+  if (level < 1) level = 1;
+  if (level > 99) level = 99;
+
+  // Don't interrupt an active clear animation.
+  if (clearing_ || gameOver_) return;
+
+  // Mark this run as "test" so highscores aren't written accidentally.
+  testMode_ = true;
+
+  // Keep internal accounting consistent with updateLevel().
+  linesCleared_ = (uint16_t)((uint16_t)(level - 1) * 10u);
+  level_ = level;
+
+  // Reset fall timer so you don't get an immediate surprise drop.
+  lastFallMs_ = nowMs;
+}
 void TetrisGame::applyLineClear(bool& levelUp) {
   uint8_t newBoard[BOARD_H][BOARD_W];
   memset(newBoard, 0, sizeof(newBoard));
@@ -299,7 +317,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
   }
   
   if (gameOver_) {
-      if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
+      if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
       tr.gameOver = true;
       return tr;
   }
@@ -319,9 +337,6 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
       clearStartMs_ = 0;
       clearDurationMs_ = CLEAR_DURATION_MS;
       suppressClearScoring_ = false;
-  clearDurationMs_ = CLEAR_DURATION_MS;
-  suppressClearScoring_ = false;
-  testMode_ = false;
       spawnNext();
       lastFallMs_ = nowMs;
       tr.linesCleared = true;
@@ -337,7 +352,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
     if (gameOver_) { 
-        if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
+        if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
         tr.gameOver = true; 
     } 
     return tr;
@@ -349,7 +364,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
     if (gameOver_) { 
-        if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
+        if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
         tr.gameOver = true; 
     } 
     return tr;
@@ -359,7 +374,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
     if (gameOver_) { 
-        if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
+        if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
         tr.gameOver = true; 
     } 
   }
