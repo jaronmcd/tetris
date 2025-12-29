@@ -14,6 +14,9 @@ public:
 
   void begin();
   void bootFlash();
+
+  // Debug: force the "high score" border style regardless of score.
+  void setDebugForceHighScoreBorders(bool enable);
   void levelUpFlash(uint8_t nextLevel);
 
   // Debug / test helper: animate the palette/border transition between ANY two levels.

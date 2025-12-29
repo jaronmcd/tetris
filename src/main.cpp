@@ -13,6 +13,9 @@ static TetrisAI ai;
 
 static uint32_t lastFrameMs = 0;
 
+// Debug: force \"high score\" border mode (serial key: h)
+static bool debugForceHighScoreBorders = false;
+
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
 static bool aiMode = true;
@@ -75,7 +78,8 @@ void setup() {
   Serial.println("Serial debug keys:");
   Serial.println("  z/x/c/v = force 1/2/3/4-line clear FX (test mode)");
   Serial.println("  [ / ]   = level -1 / +1 (animates transition, test mode)");
-  Serial.println("  { / }   = level -10 / +10 (animates transition, test mode)\n");
+  Serial.println("  { / }   = level -10 / +10 (animates transition, test mode)");
+  Serial.println("  h       = toggle high-score border style (test mode)\n");
 }
 
 void loop() {
@@ -87,6 +91,13 @@ void loop() {
   if (human.aiProfileSet >= 0) {
     ai.setProfile((uint8_t)human.aiProfileSet);
     human.aiProfileSet = -1;
+  }
+
+  if (human.toggleHighScoreBorders) {
+    debugForceHighScoreBorders = !debugForceHighScoreBorders;
+    display.setDebugForceHighScoreBorders(debugForceHighScoreBorders);
+    Serial.print(">> DEBUG: High-score border ");
+    Serial.println(debugForceHighScoreBorders ? "ON" : "OFF");
   }
 
   if (anyHumanAction(human)) {

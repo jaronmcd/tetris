@@ -18,6 +18,9 @@ static uint16_t g_hueNew = 0;
 static uint32_t g_wipeStartMs = 0;
 static bool     g_firstRun = true;
 
+
+// Debug: force high-score border mode for testing
+static bool     g_debugForceHighScoreBorders = false;
 // Border reactive "sphere" around the falling piece (computed each frame in render()).
 static bool     g_focusActive = false;
 static int16_t  g_focusX = -1;        // matrix coordinates (0..MATRIX_W-1)
@@ -25,11 +28,11 @@ static int16_t  g_focusY = -1;        // matrix coordinates (0..MATRIX_H-1)
 static uint8_t  g_focusStrength = 0;  // 0..255
 
 // Tuning knobs (border reaction)
-static constexpr int     FOCUS_RADIUS = 10;//9;           // pixels (matrix space)
-static constexpr uint8_t FOCUS_BOOST_OUTER = 110;//90;     // brightness boost at center (outer ring)
+static constexpr int     FOCUS_RADIUS = 9;           // pixels (matrix space)
+static constexpr uint8_t FOCUS_BOOST_OUTER = 90;     // brightness boost at center (outer ring)
 static constexpr uint8_t FOCUS_BOOST_MID   = 50;     // brightness boost at center (middle ring)
 static constexpr uint8_t FOCUS_BOOST_INNER = 18;     // brightness boost at center (inner ring)
-static constexpr uint16_t FOCUS_HUE_SHIFT_MAX = 90;//700; // hue nudge amount near the piece
+static constexpr uint16_t FOCUS_HUE_SHIFT_MAX = 700; // hue nudge amount near the piece
 static constexpr uint8_t  FOCUS_DESAT_MAX = 35;      // desaturate a bit near the piece
 
 // Level-up fade animation state
@@ -188,6 +191,10 @@ void MatrixDisplay::levelTransition(uint8_t fromLevel, uint8_t toLevel) {
   g_waterfallStartMs = now;
   g_waterfallFromLevel = fromLevel;
   g_waterfallToLevel = toLevel;
+}
+
+void MatrixDisplay::setDebugForceHighScoreBorders(bool enable) {
+  g_debugForceHighScoreBorders = enable;
 }
 
 void MatrixDisplay::levelUpFlash(uint8_t nextLevel) {
@@ -554,7 +561,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     else fadeStep = (uint8_t)((elapsed * 255) / g_fadeDuration);
   }
 
-  const bool chasingHighScore = g.allowHighScore() && (g.score() > g.highScore());
+  const bool chasingHighScore = g_debugForceHighScoreBorders || (g.allowHighScore() && (g.score() > g.highScore()));
 
   int16_t wfFrontY = -999;
   if (g_waterfallActive) {

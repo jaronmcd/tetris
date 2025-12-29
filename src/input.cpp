@@ -70,6 +70,7 @@ Actions InputManager::readSerial() {
     else if (ch == '[') a.testLevelDelta -= 1;
     else if (ch == '}') a.testLevelDelta += 10;
     else if (ch == '{') a.testLevelDelta -= 10;
+    else if (ch == 'h' || ch == 'H') a.toggleHighScoreBorders = true;
   }
   return a;
 }
@@ -122,5 +123,6 @@ Actions InputManager::readActions() {
   out.aiProfileSet = s.aiProfileSet;
   out.testClearLines = s.testClearLines;
   out.testLevelDelta = s.testLevelDelta;
+  out.toggleHighScoreBorders = s.toggleHighScoreBorders;
   return out;
 }

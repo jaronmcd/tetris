@@ -21,4 +21,8 @@ struct Actions {
   // Debug: bump level up/down for testing palettes & transitions (serial-only)
   // 0 = none, negative = down, positive = up
   int8_t testLevelDelta = 0;
+
+  // Debug: toggle "high score border" mode for testing (serial-only)
+  bool toggleHighScoreBorders = false;
+
 };
