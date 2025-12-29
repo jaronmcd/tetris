@@ -264,7 +264,11 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   uint8_t sat = 200;
   uint8_t val = isMeshGap ? 40 : 140;
 
-  // Reactive glow around the falling piece (also applies during arcade/high-score mode)
+  uint32_t base = strip_.ColorHSV(finalHue, sat, val);
+
+  // Reactive effect while high-score borders are active:
+  // Blend into a localized rainbow "aura" near the falling piece.
+  // (Full rainbow at the center, fading to normal at the edge.)
   if (g_focusActive && g_focusStrength) {
     int dx = (int)x - (int)g_focusX;
     int dy = (int)y - (int)g_focusY;
@@ -275,17 +279,22 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
       uint16_t inten = (uint16_t)(((r2 - d2) * 255) / r2); // 0..255
       inten = (uint16_t)((inten * g_focusStrength) / 255);
 
-      int vv = (int)val + ((int)inten * 60) / 255;
-      if (vv > 220) vv = 220;
-      val = (uint8_t)vv;
+      // Fast, lively hue rotation with a little spatial phase so it looks "rainbow-y".
+      uint16_t hue = (uint16_t)(
+        (uint32_t)nowMs * 70UL +
+        (uint32_t)x * 4200UL +
+        (uint32_t)y * 2600UL
+      );
 
-      int ss = (int)sat - ((int)inten * 18) / 255;
-      if (ss < 0) ss = 0;
-      sat = (uint8_t)ss;
+      // Keep it bright, but respect the mesh gap dimming a bit.
+      uint8_t rVal = (val < 80) ? 170 : 255;
+      uint32_t rainbow = strip_.ColorHSV(hue, 255, rVal);
+
+      return lerpColorRGB(base, rainbow, (uint8_t)inten);
     }
   }
 
-  return strip_.ColorHSV(finalHue, sat, val);
+  return base;
 }
 
 
