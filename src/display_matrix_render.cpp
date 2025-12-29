@@ -37,6 +37,11 @@ static constexpr uint8_t  FOCUS_DESAT_MAX = 35;      // desaturate a bit near th
 
 // Level-up fade animation state
 static bool     g_isFading = false;
+
+// Set each frame: true when using high-score borders (rainbow), false for boss/normal.
+static bool g_highScoreRainbowMode = false;
+static bool g_bossLevelActive = false;
+static uint8_t g_bossLevelNumber = 0;
 static uint32_t g_fadeStartMs = 0;
 static uint8_t  g_fadeFromLevel = 0;
 static uint8_t  g_fadeToLevel = 0;
@@ -281,19 +286,24 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
 
   bool isMeshGap = ((x ^ y) & 1);
 
-  uint8_t sat = 200;
+    uint8_t sat = 200;
   uint8_t val = isMeshGap ? 40 : 140;
 
-  uint32_t base = strip_.ColorHSV(finalHue, sat, val);
+  // High-score borders are rainbow and should NOT depend on the locked-piece palette.
+  // Boss borders reuse the classic arcade hue behavior (piece-linked wipe).
+  uint16_t baseHue = finalHue;
+  if (g_highScoreRainbowMode) {
+    baseHue = (uint16_t)(
+      (uint32_t)nowMs * 28UL +
+      (uint32_t)x * 5200UL +
+      (uint32_t)y * 3100UL
+    );
+  }
 
-  // Reactive effect while high-score borders are active:
-  // Continuous rainbow irradiation from the falling piece (not just a single ring).
-  //
-  // Idea:
-  //  - Strength ramps up as the piece approaches ANY edge.
-  //  - Border color is a moving rainbow field whose phase depends on distance from the piece,
-  //    so it looks like energy propagating outward.
-  if (g_focusActive && g_focusStrength) {
+  uint32_t base = strip_.ColorHSV(baseHue, sat, val);
+
+  // High-score mode: continuous rainbow irradiation from the falling piece.
+  if (g_highScoreRainbowMode && g_focusActive && g_focusStrength) {
     // How close is the piece to the nearest matrix edge?
     int minEdge = (int)g_focusX;
     int t = (int)(MATRIX_W - 1) - (int)g_focusX; if (t < minEdge) minEdge = t;
@@ -312,10 +322,9 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
     uint16_t dist = isqrt32(d2); // 0..~32 on 16x16
 
     // Per-pixel falloff: nearest border side lights up most, far side least.
-    int near = 255 - (int)dist * 18; // tweak 18..14 for longer reach
+    int near = 255 - (int)dist * 18;
     if (near < 0) near = 0;
 
-    // Overall mix amount (0..255)
     uint16_t mix16 = (uint16_t)((uint32_t)edgeFactor * (uint32_t)near / 255u);
     mix16 = (uint16_t)((uint32_t)mix16 * (uint32_t)g_focusStrength / 255u);
     uint8_t mix = (uint8_t)mix16;
@@ -325,11 +334,8 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
         return (v & 0x80) ? (uint8_t)(255 - ((v & 0x7F) << 1)) : (uint8_t)((v & 0x7F) << 1);
       };
 
-      // Outward-traveling wavefield:
-      // phase increases with distance and decreases with time => looks like it moves outward.
       const uint8_t wave = tri8((uint8_t)((dist * 20u - (uint32_t)(nowMs / 10u)) & 0xFF));
 
-      // Hue also depends on distance, so you get a continuous "rainbow radiating" vibe.
       uint16_t hue = (uint16_t)(
         (uint32_t)nowMs * 55UL +
         (uint32_t)dist * 11000UL +
@@ -337,8 +343,7 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
         (uint32_t)y * 700UL
       );
 
-      // Brightness breathes with the wave (continuous, not thresholded).
-      uint8_t rVal = (uint8_t)(140 + ((uint16_t)wave * 115u) / 255u); // 140..255
+      uint8_t rVal = (uint8_t)(140 + ((uint16_t)wave * 115u) / 255u);
       uint32_t rainbow = strip_.ColorHSV(hue, 255, rVal);
 
       return lerpColorRGB(base, rainbow, mix);
@@ -361,9 +366,20 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   // so level 2 feels like a color reward.
   const bool mutedFirstLevel = (level == 1);
 
-  const uint8_t style = borderStyleForLevel(level);
+  uint8_t style = borderStyleForLevel(level);
 
-  const uint16_t hue = mutedFirstLevel ? 0 : pickBorderHueForLevel(level);
+  uint16_t hue = mutedFirstLevel ? 0 : pickBorderHueForLevel(level);
+
+  // Boss level (just before pattern change): preview the NEXT border style, but with
+  // the per-locked-piece color wipe ("color changes") to give a final-boss vibe.
+  const bool bossThisLevel = g_bossLevelActive && (level == g_bossLevelNumber);
+  if (bossThisLevel) {
+    style = borderStyleForLevel((uint8_t)(level + 1));
+    const uint32_t duration = 600;
+    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : duration;
+    uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
+    hue = (by < splitY) ? g_hueNew : g_hueOld;
+  }
 
   uint8_t sat = 255;
   uint8_t val = 92;
@@ -621,7 +637,11 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     else fadeStep = (uint8_t)((elapsed * 255) / g_fadeDuration);
   }
 
-  const bool chasingHighScore = g_debugForceHighScoreBorders || (g.allowHighScore() && (g.score() > g.highScore()));
+  const bool highScoreBorders = g_debugForceHighScoreBorders || (g.allowHighScore() && (g.score() > g.highScore()));
+  const bool bossLevel = (!highScoreBorders) && ((lvl % 10) == 0);
+  g_highScoreRainbowMode = highScoreBorders;
+  g_bossLevelActive = bossLevel;
+  g_bossLevelNumber = lvl;
 
   int16_t wfFrontY = -999;
   if (g_waterfallActive) {
@@ -638,11 +658,11 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       bool inBoardX = (x >= BOARD_OFFSET_X) && (x < (BOARD_OFFSET_X + BOARD_W));
       bool inBoardY = (y >= BOARD_OFFSET_Y) && (y < (BOARD_OFFSET_Y + BOARD_H));
       if (!inBoardX || !inBoardY) {
-        uint32_t bc = chasingHighScore ? arcadeBorderColor(g, x, y, nowMs)
+        uint32_t bc = highScoreBorders ? arcadeBorderColor(g, x, y, nowMs)
                                        : solidLevelBorderColor(g, x, y, nowMs);
 
         if (g_waterfallActive && wfFrontY > -900) {
-          if (!chasingHighScore) {
+          if (!highScoreBorders) {
             uint32_t oldC = solidBorderForLevel(g_waterfallFromLevel, x, y, nowMs);
             uint32_t newC = solidBorderForLevel(g_waterfallToLevel, x, y, nowMs);
 
