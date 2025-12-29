@@ -72,6 +72,9 @@ void TetrisGame::reset() {
   clearing_ = false;
   clearCount_ = 0;
   clearStartMs_ = 0;
+  clearDurationMs_ = CLEAR_DURATION_MS;
+  suppressClearScoring_ = false;
+  testMode_ = false;
   allowHighScore_ = true;
   bagIdx_ = 7;
   refillBag();
@@ -90,15 +93,15 @@ bool TetrisGame::isClearingRow(uint8_t y) const {
 uint32_t TetrisGame::clearingElapsedMs(uint32_t nowMs) const {
   if (!clearing_) return 0;
   uint32_t elapsed = (nowMs >= clearStartMs_) ? (nowMs - clearStartMs_) : 0;
-  if (elapsed > CLEAR_DURATION_MS) elapsed = CLEAR_DURATION_MS;
+  if (elapsed > clearDurationMs_) elapsed = clearDurationMs_;
   return elapsed;
 }
 
 uint8_t TetrisGame::clearingAlpha(uint32_t nowMs) const {
   if (!clearing_) return 255;
   uint32_t elapsed = (nowMs >= clearStartMs_) ? (nowMs - clearStartMs_) : 0;
-  if (elapsed >= CLEAR_DURATION_MS) return 0;
-  uint32_t a = 255 - (elapsed * 255) / CLEAR_DURATION_MS;
+  if (elapsed >= clearDurationMs_) return 0;
+  uint32_t a = 255 - (elapsed * 255) / clearDurationMs_;
   return (uint8_t)a;
 }
 
@@ -177,8 +180,40 @@ void TetrisGame::beginLineClear(uint32_t nowMs, const uint8_t* rows, uint8_t cou
   for (uint8_t i = 0; i < 4; i++) clearRows_[i] = 0;
   for (uint8_t i = 0; i < count && i < 4; i++) clearRows_[i] = rows[i];
   clearStartMs_ = nowMs;
+  clearDurationMs_ = (count >= 4) ? (CLEAR_DURATION_MS * 2) : CLEAR_DURATION_MS;
 }
 
+
+void TetrisGame::debugForceLineClear(uint32_t nowMs, uint8_t lines) {
+  if (lines < 1) return;
+  if (lines > 4) lines = 4;
+
+  // Don't interrupt an active clear animation.
+  if (clearing_ || gameOver_) return;
+
+  // Mark this run as "test" so highscores aren't written accidentally.
+  testMode_ = true;
+  allowHighScore_ = false;
+
+  // Don't award score/lines/level for forced clears.
+  suppressClearScoring_ = true;
+
+  // Clear the bottom N rows so the effect is easy to see.
+  uint8_t rows[4];
+  for (uint8_t i = 0; i < lines; i++) {
+    rows[i] = (uint8_t)(BOARD_H - 1 - i);
+  }
+
+  // Fill those rows with a visible pattern (IDs 1..7).
+  for (uint8_t i = 0; i < lines; i++) {
+    uint8_t y = rows[i];
+    for (uint8_t x = 0; x < BOARD_W; x++) {
+      board_[y][x] = (uint8_t)(((x + i) % 7) + 1);
+    }
+  }
+
+  beginLineClear(nowMs, rows, lines);
+}
 void TetrisGame::applyLineClear(bool& levelUp) {
   uint8_t newBoard[BOARD_H][BOARD_W];
   memset(newBoard, 0, sizeof(newBoard));
@@ -193,7 +228,7 @@ void TetrisGame::applyLineClear(bool& levelUp) {
   memcpy(board_, newBoard, sizeof(board_));
 
   uint8_t clearedThis = clearCount_;
-  if (clearedThis > 0) {
+  if (clearedThis > 0 && !suppressClearScoring_) {
     linesCleared_ += clearedThis;
 
     uint8_t oldLevel = level_;
@@ -256,7 +291,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
 
   // Remember whether this run is allowed to write highscores. The display uses
   // this to decide when to enable "chasing the record" border FX.
-  allowHighScore_ = allowHighScore;
+  allowHighScore_ = allowHighScore && !testMode_;
 
   if (a.restart) {
     reset();
@@ -269,12 +304,24 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
       return tr;
   }
 
+
+  // Serial-only debug: force a line-clear effect (no scoring, disables highscores for this run)
+  if (a.testClearLines > 0 && !clearing_ && !gameOver_) {
+    debugForceLineClear(nowMs, (uint8_t)a.testClearLines);
+    return tr;
+  }
+
   if (clearing_) {
-    if ((nowMs - clearStartMs_) >= CLEAR_DURATION_MS) {
+    if ((nowMs - clearStartMs_) >= clearDurationMs_) {
       applyLineClear(tr.levelUp);
       clearing_ = false;
       clearCount_ = 0;
       clearStartMs_ = 0;
+      clearDurationMs_ = CLEAR_DURATION_MS;
+      suppressClearScoring_ = false;
+  clearDurationMs_ = CLEAR_DURATION_MS;
+  suppressClearScoring_ = false;
+  testMode_ = false;
       spawnNext();
       lastFallMs_ = nowMs;
       tr.linesCleared = true;

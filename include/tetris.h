@@ -34,6 +34,10 @@ public:
   // CHANGED: Added 'allowHighScore' parameter
   TickResult tick(uint32_t nowMs, const Actions& a, bool allowHighScore);
 
+  // Debug: force a 1/2/3/4-line clear animation for FX testing (does not award score/lines, and disables high scores for this run).
+  void debugForceLineClear(uint32_t nowMs, uint8_t lines);
+
+
   bool isGameOver() const { return gameOver_; }
   bool isClearingLines() const { return clearing_; }
 
@@ -59,7 +63,7 @@ public:
   bool isClearingRow(uint8_t y) const;
   uint8_t clearingAlpha(uint32_t nowMs) const;            
   uint32_t clearingElapsedMs(uint32_t nowMs) const;       
-  uint32_t clearDurationMs() const { return CLEAR_DURATION_MS; }
+  uint32_t clearDurationMs() const { return clearDurationMs_; }
 
   void getCurrentPieceBlocks(Cell* out, uint8_t& count) const;
 
@@ -103,8 +107,11 @@ private:
   bool clearing_ = false;
   uint8_t clearRows_[4] = {0, 0, 0, 0};
   uint8_t clearCount_ = 0;
-  uint32_t clearStartMs_ = 0;
   static constexpr uint32_t CLEAR_DURATION_MS = 260;
+  uint32_t clearStartMs_ = 0;
+  uint32_t clearDurationMs_ = CLEAR_DURATION_MS;
+  bool suppressClearScoring_ = false;
+  bool testMode_ = false;
 
   uint32_t score_ = 0;
   uint32_t highScore_ = 0; 

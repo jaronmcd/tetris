@@ -56,6 +56,10 @@ Actions InputManager::readSerial() {
     else if (ch == ' ') a.drop = true;
     else if (ch == 'r' || ch == 'R') a.restart = true;
     else if (ch >= '0' && ch <= '3') a.aiProfileSet = (int8_t)(ch - '0');
+    else if (ch == 'z' || ch == 'Z') a.testClearLines = 1;
+    else if (ch == 'x' || ch == 'X') a.testClearLines = 2;
+    else if (ch == 'c' || ch == 'C') a.testClearLines = 3;
+    else if (ch == 'v' || ch == 'V') a.testClearLines = 4;
   }
   return a;
 }
@@ -106,5 +110,6 @@ Actions InputManager::readActions() {
 
   // Commands (serial-only)
   out.aiProfileSet = s.aiProfileSet;
+  out.testClearLines = s.testClearLines;
   return out;
 }

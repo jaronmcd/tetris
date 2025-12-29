@@ -391,7 +391,50 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       if (clearing && g.isClearingRow(by)) {
         uint8_t lines = g.clearingLineCount();
         if (lines >= 4) {
-          c = strip_.ColorHSV((bx * 4000) + (nowMs * 60), 255, alpha);
+          // TETRIS (4 lines): 4 bright white flashes, but the rainbow keeps moving underneath.
+          // Implementation: animated HSV rainbow with saturation pulsed down to 0 (white) 4 times.
+          const uint32_t dur = g.clearDurationMs();
+          const uint8_t flashes = 4;
+
+          // 4 pulses across the clear duration.
+          uint32_t period = (dur > 0) ? (dur / flashes) : 1;
+          if (period < 4) period = 4;
+          uint32_t local = elapsed % period;
+          uint32_t half = period / 2;
+          if (half < 1) half = 1;
+
+          // Triangle wave 0..255
+          uint32_t tri = (local < half)
+            ? (local * 255UL) / half
+            : ((period - local) * 255UL) / half;
+
+          // Punchier flash curve
+          uint32_t pulse32 = (tri * tri) / 255UL; // 0..255
+          uint8_t pulse = (uint8_t)pulse32;
+
+          // Desaturate to white at the peak of the flash.
+          uint8_t sat = (uint8_t)(255 - pulse);
+
+          // Small rainbow sweep highlight across X during the clear.
+          uint8_t sweepX = (dur > 0)
+            ? (uint8_t)((elapsed * (uint32_t)(BOARD_W - 1)) / dur)
+            : 0;
+          int d = (int)bx - (int)sweepX; if (d < 0) d = -d;
+          uint8_t boost = (d == 0) ? 70 : (d == 1) ? 30 : (d == 2) ? 14 : 0;
+
+          // Keep the clear fade behavior, but let flashes push brightness up.
+          uint16_t v16 = (uint16_t)alpha + (uint16_t)(pulse >> 2) + boost;
+          if (v16 > 255) v16 = 255;
+
+          // Animated rainbow base (moves during clear, not just "static per column")
+          uint16_t hue = (uint16_t)(
+            (uint32_t)nowMs * 60UL +
+            (uint32_t)bx * 5200UL +
+            (uint32_t)by * 1100UL +
+            (dur ? ((uint32_t)elapsed * 22000UL / dur) : 0)
+          );
+
+          c = strip_.ColorHSV(hue, sat, (uint8_t)v16);
         } else if (lines == 3) {
           if (elapsed < 80 || (elapsed >= 160 && elapsed < 240) || (elapsed >= 320 && elapsed < 400))
             c = strip_.Color(255, 255, 255);

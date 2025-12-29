@@ -105,6 +105,10 @@ void loop() {
     act = ai.think(game, now);
   }
 
+
+  // Always pass through serial-only debug commands, even in AI mode.
+  act.testClearLines = human.testClearLines;
+
   // If human, always true. If AI, check the config.
   bool allowHighScore = (!aiMode) || (AI_SAVES_HIGH_SCORE);
 
