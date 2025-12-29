@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <Preferences.h>
 #include "config.h"
 #include "actions.h"
 
@@ -8,11 +9,11 @@ public:
   struct TickResult {
     bool levelUp = false;
     bool linesCleared = false; 
-    bool gameOver = false; // <--- ADDED THIS
+    bool gameOver = false;
   };
 
   struct Piece {
-    uint8_t type = 0;   // 0..6
+    uint8_t type = 0;   
     int8_t x = 3;
     int8_t y = -1;
     uint8_t rot = 0;
@@ -36,6 +37,10 @@ public:
   uint8_t level() const { return level_; }
   uint16_t lines() const { return linesCleared_; }
   uint32_t score() const { return score_; }
+  
+  // --- NEW GETTERS ---
+  uint32_t highScore() const { return highScore_; }
+  uint8_t highLevel() const { return highLevel_; } 
 
   const uint8_t (*board() const)[BOARD_W] { return board_; }
   Piece currentPiece() const { return cur_; }
@@ -53,11 +58,11 @@ public:
 
   void getCurrentPieceBlocks(Cell* out, uint8_t& count) const;
 
-  // New getters for AI
+  // AI getters
   int8_t currentX() const { return cur_.x; }
   int8_t currentY() const { return cur_.y; }
   uint8_t currentRotation() const { return cur_.rot; }
-  static const uint16_t (*getShapes())[4]; // Helper for AI access
+  static const uint16_t (*getShapes())[4]; 
 
 private:
   static bool maskCell(uint16_t m, uint8_t r, uint8_t c);
@@ -80,6 +85,9 @@ private:
   void hardDrop(uint32_t nowMs, bool& levelUp);
   void lockAndContinue(uint32_t nowMs, bool& levelUp);
 
+  void loadHighScore();
+  void saveHighScore();
+
 private:
   uint8_t board_[BOARD_H][BOARD_W] = {};
   Piece cur_;
@@ -87,7 +95,6 @@ private:
 
   uint8_t lastType_ = 0; 
 
-  // Line clear fade animation state
   bool clearing_ = false;
   uint8_t clearRows_[4] = {0, 0, 0, 0};
   uint8_t clearCount_ = 0;
@@ -95,6 +102,9 @@ private:
   static constexpr uint32_t CLEAR_DURATION_MS = 260;
 
   uint32_t score_ = 0;
+  uint32_t highScore_ = 0; 
+  uint8_t highLevel_ = 1; // <--- NEW Tracking Variable
+  
   uint16_t linesCleared_ = 0;
   uint8_t level_ = 1;
 
@@ -104,4 +114,6 @@ private:
   uint8_t bagIdx_ = 7;
 
   uint32_t pieceSeq_ = 0;
+  
+  Preferences prefs_;
 };

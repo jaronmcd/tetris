@@ -15,7 +15,6 @@ static const uint8_t TINY_FONT[][3] = {
   {0x17, 0x15, 0x1F}, // 9
   {0x00, 0x00, 0x00}, // : (handled manually)
   {0x00, 0x00, 0x00}, // Space
-  // Letters A-Z
   {0x1F, 0x05, 0x1F}, // A
   {0x1F, 0x15, 0x0A}, // B
   {0x0E, 0x11, 0x11}, // C
@@ -53,14 +52,12 @@ static const uint32_t THEMES[NUM_THEMES][8] = {
   {0, 0x00E5FF, 0xFFF400, 0xFF3DF2, 0x00FF9A, 0xFF2D55, 0x6C63FF, 0xFF7A00},
 };
 
-// State Vars
 static uint8_t  g_prevLocked = 255;
 static uint16_t g_hueOld = 0;
 static uint16_t g_hueNew = 0;
 static uint32_t g_wipeStartMs = 0;
 static bool     g_firstRun = true;
 
-// Fade State
 static bool     g_isFading = false;
 static uint32_t g_fadeStartMs = 0;
 static uint8_t  g_fadeFromLevel = 0;
@@ -137,7 +134,7 @@ void MatrixDisplay::drawChar(int16_t x, int16_t y, char c, uint32_t color) {
 }
 
 void MatrixDisplay::drawTextCentered(String text, int16_t y, uint32_t color) {
-  int totalWidth = text.length() * 4 - 1; // 3px char + 1px space
+  int totalWidth = text.length() * 4 - 1; 
   int startX = (MATRIX_W - totalWidth) / 2;
   if (startX < 0) startX = 0; 
 
@@ -146,48 +143,44 @@ void MatrixDisplay::drawTextCentered(String text, int16_t y, uint32_t color) {
   }
 }
 
-// --- PAGED GAME OVER ---
+// --- PAGED GAME OVER (UPDATED: Current Score Only) ---
 void MatrixDisplay::showGameOver(uint32_t score, uint8_t level) {
-  // Colors
-  uint32_t cLevelLabel = strip_.Color(0, 0, 255);   // Blue "LVL"
-  uint32_t cLevelVal   = strip_.Color(255, 255, 255); // White #
-  uint32_t cScoreLabel = strip_.Color(0, 255, 0);   // Green "SCR"
-  uint32_t cScoreVal   = strip_.Color(255, 255, 255); // White #
+  uint32_t cLevelLabel = strip_.Color(0, 0, 255);   
+  uint32_t cLevelVal   = strip_.Color(255, 255, 255); 
+  uint32_t cScoreLabel = strip_.Color(0, 255, 0);   
+  uint32_t cScoreVal   = strip_.Color(255, 255, 255);
+  // HI Label colors removed
 
-  // Cycle 3 times
   for (int i = 0; i < 3; i++) {
-    
-    // 1. "LVL"
-    strip_.clear();
-    drawTextCentered("LVL", 6, cLevelLabel);
-    strip_.show();
-    delay(1500);
-
-    // 2. Level Number
-    strip_.clear();
-    drawTextCentered(String(level), 6, cLevelVal);
-    strip_.show();
-    delay(1500);
-
-    // 3. "SCR"
-    strip_.clear();
-    drawTextCentered("SCR", 6, cScoreLabel);
-    strip_.show();
-    delay(1500);
-
-    // 4. Score Number
-    strip_.clear();
-    drawTextCentered(String(score), 6, cScoreVal);
-    strip_.show();
-    delay(1500);
+    strip_.clear(); drawTextCentered("LVL", 6, cLevelLabel); strip_.show(); delay(1500);
+    strip_.clear(); drawTextCentered(String(level), 6, cLevelVal); strip_.show(); delay(1500);
+    strip_.clear(); drawTextCentered("SCR", 6, cScoreLabel); strip_.show(); delay(1500);
+    strip_.clear(); drawTextCentered(String(score), 6, cScoreVal); strip_.show(); delay(1500);
+    // HI section removed
   }
   
-  strip_.clear();
-  strip_.show();
-  delay(500);
+  strip_.clear(); strip_.show(); delay(500);
 }
 
-// --- STANDARD RENDER ---
+// --- NEW BOOT STATS ---
+void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel) {
+  uint32_t cHiLabel = strip_.Color(255, 0, 255); // Purple "HI"
+  uint32_t cHiVal   = strip_.Color(255, 255, 0); // Yellow Val
+  uint32_t cLvlLabel = strip_.Color(0, 0, 255);  // Blue "LVL"
+  uint32_t cLvlVal   = strip_.Color(255, 255, 255); // White Val
+
+  // 1. Show High Score
+  strip_.clear(); drawTextCentered("HI", 6, cHiLabel); strip_.show(); delay(1200);
+  strip_.clear(); drawTextCentered(String(highScore), 6, cHiVal); strip_.show(); delay(1500);
+
+  // 2. Show High Level
+  strip_.clear(); drawTextCentered("LVL", 6, cLvlLabel); strip_.show(); delay(1200);
+  strip_.clear(); drawTextCentered(String(highLevel), 6, cLvlVal); strip_.show(); delay(1500);
+
+  strip_.clear(); strip_.show(); delay(500);
+}
+
+// --- RENDER ---
 uint16_t MatrixDisplay::XY(uint8_t x, uint8_t y) const {
   if (x >= MATRIX_W || y >= MATRIX_H) return 0;
   uint8_t xx = (uint8_t)(MATRIX_W - 1 - x);

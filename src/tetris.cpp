@@ -13,10 +13,7 @@ static const uint16_t SHAPES[7][4] = {
   { 0x2E00, 0x4460, 0x0E80, 0xC440 }  // L
 };
 
-// AI Helper
-const uint16_t (*TetrisGame::getShapes())[4] {
-  return SHAPES;
-}
+const uint16_t (*TetrisGame::getShapes())[4] { return SHAPES; }
 
 bool TetrisGame::maskCell(uint16_t m, uint8_t r, uint8_t c) {
   uint8_t bit = 15 - (r * 4 + c);
@@ -28,10 +25,8 @@ bool TetrisGame::fits(const uint8_t board[BOARD_H][BOARD_W], uint8_t type, uint8
   for (uint8_t r = 0; r < 4; r++) {
     for (uint8_t c = 0; c < 4; c++) {
       if (!maskCell(m, r, c)) continue;
-
       int8_t bx = px + (int8_t)c;
       int8_t by = py + (int8_t)r;
-
       if (bx < 0 || bx >= BOARD_W) return false;
       if (by >= BOARD_H) return false;
       if (by < 0) continue;
@@ -42,7 +37,28 @@ bool TetrisGame::fits(const uint8_t board[BOARD_H][BOARD_W], uint8_t type, uint8
 }
 
 void TetrisGame::begin() {
+  loadHighScore();
   reset();
+}
+
+void TetrisGame::loadHighScore() {
+  prefs_.begin("tetris", true); 
+  highScore_ = prefs_.getUInt("hs", 0);
+  // NEW: Load High Level (default 1)
+  highLevel_ = (uint8_t)prefs_.getUInt("hl", 1);
+  prefs_.end();
+}
+
+void TetrisGame::saveHighScore() {
+  if (score_ > highScore_) {
+    highScore_ = score_;
+    highLevel_ = level_; // Capture the level achieved in this best run
+    
+    prefs_.begin("tetris", false); 
+    prefs_.putUInt("hs", highScore_);
+    prefs_.putUInt("hl", (uint32_t)highLevel_);
+    prefs_.end();
+  }
 }
 
 void TetrisGame::reset() {
@@ -53,11 +69,9 @@ void TetrisGame::reset() {
   pieceSeq_ = 0;
   gameOver_ = false;
   lastType_ = 0; 
-
   clearing_ = false;
   clearCount_ = 0;
   clearStartMs_ = 0;
-
   bagIdx_ = 7;
   refillBag();
   spawnNext();
@@ -199,14 +213,12 @@ void TetrisGame::applyLineClear(bool& levelUp) {
 void TetrisGame::lockAndContinue(uint32_t nowMs, bool& levelUp) {
   lastType_ = cur_.type;
   placePieceToBoard(cur_);
-
   uint8_t rows[4];
   uint8_t cnt = findFullRows(rows);
   if (cnt > 0) {
     beginLineClear(nowMs, rows, cnt);
     return;
   }
-
   spawnNext();
   lastFallMs_ = nowMs;
 }
@@ -214,7 +226,6 @@ void TetrisGame::lockAndContinue(uint32_t nowMs, bool& levelUp) {
 void TetrisGame::tryMove(uint32_t nowMs, int8_t dx, int8_t dy, bool& levelUp) {
   int8_t nx = cur_.x + dx;
   int8_t ny = cur_.y + dy;
-
   if (fits(board_, cur_.type, cur_.rot, nx, ny)) {
     cur_.x = nx;
     cur_.y = ny;
@@ -240,14 +251,13 @@ void TetrisGame::hardDrop(uint32_t nowMs, bool& levelUp) {
 
 TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   TickResult tr;
-
   if (a.restart) {
     reset();
     return tr;
   }
   
-  // FIX: Report Game Over status
   if (gameOver_) {
+      saveHighScore(); 
       tr.gameOver = true;
       return tr;
   }
@@ -272,8 +282,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   if (a.drop) {
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
-    // FIX: Check for game over immediately after drop/spawn
-    if (gameOver_) tr.gameOver = true; 
+    if (gameOver_) { saveHighScore(); tr.gameOver = true; } 
     return tr;
   }
 
@@ -282,16 +291,14 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
       lastFallMs_ = nowMs;
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
-    // FIX: Check for game over
-    if (gameOver_) tr.gameOver = true;
+    if (gameOver_) { saveHighScore(); tr.gameOver = true; } 
     return tr;
   }
 
   if ((nowMs - lastFallMs_) >= dropIntervalMs()) {
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
-    // FIX: Check for game over
-    if (gameOver_) tr.gameOver = true;
+    if (gameOver_) { saveHighScore(); tr.gameOver = true; } 
   }
 
   return tr;
