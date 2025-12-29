@@ -13,9 +13,11 @@ public:
   void bootFlash();
   void levelUpFlash(uint8_t nextLevel); 
   
-  // Game Over: "LVL" -> Val -> "SCR" -> Val 
-  // (Removed highScore arg)
+  // Normal Game Over (Score + Level)
   void showGameOver(uint32_t score, uint8_t level);
+
+  // NEW: Celebration for beating the record
+  void showNewHighScore(uint32_t score);
 
   // Boot: "HI" -> Score -> "LVL" -> Level
   void showBootStats(uint32_t highScore, uint8_t highLevel);

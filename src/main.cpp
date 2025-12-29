@@ -4,6 +4,7 @@
 #include "display_matrix.h"
 #include "input.h"
 #include "ai.h"
+#include "config.h"
 
 static TetrisGame game;
 static MatrixDisplay display;
@@ -29,13 +30,17 @@ void setup() {
   display.bootFlash(); // RGB Flash
 
   input.begin();
-  game.begin(); // Loads HS and HL from memory
+  game.begin(); // Loads HS from memory
 
-  // SHOW HIGH SCORE & HIGH LEVEL ON BOOT
+  // --- NEW: CONFIG TOGGLE TO WIPE DATA ---
+  if (RESET_SCORES_ON_BOOT) {
+    game.formatStorage(); // Wipe data
+  }
+
+  // Show stats (will be 0 if wiped above)
   Serial.print("Booting... High Score: "); Serial.print(game.highScore());
   Serial.print(" | High Level: "); Serial.println(game.highLevel());
   
-  // Call the new boot function
   display.showBootStats(game.highScore(), game.highLevel());
 
   ai.reset();
@@ -92,11 +97,13 @@ void loop() {
   if (res.gameOver) {
     Serial.println("GAME OVER");
     Serial.print("Final Score: "); Serial.println(game.score());
-    Serial.print("High Score:  "); Serial.println(game.highScore());
     
-    // UPDATED: Show only current run stats (Level + Score)
-    // removed game.highScore() argument
-    display.showGameOver(game.score(), game.level());
+    if (res.newHighScore) {
+      Serial.println(">>> NEW HIGH SCORE! <<<");
+      display.showNewHighScore(game.score());
+    } else {
+      display.showGameOver(game.score(), game.level());
+    }
 
     // Restart
     Serial.println("Restarting...");

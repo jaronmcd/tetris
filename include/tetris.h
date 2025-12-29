@@ -10,6 +10,7 @@ public:
     bool levelUp = false;
     bool linesCleared = false; 
     bool gameOver = false;
+    bool newHighScore = false;
   };
 
   struct Piece {
@@ -26,6 +27,9 @@ public:
 
   void begin();
   void reset();
+  
+  // NEW: Wipes all saved data
+  void formatStorage();
 
   uint32_t pieceSeq() const { return pieceSeq_; }
 
@@ -38,7 +42,6 @@ public:
   uint16_t lines() const { return linesCleared_; }
   uint32_t score() const { return score_; }
   
-  // --- NEW GETTERS ---
   uint32_t highScore() const { return highScore_; }
   uint8_t highLevel() const { return highLevel_; } 
 
@@ -86,7 +89,7 @@ private:
   void lockAndContinue(uint32_t nowMs, bool& levelUp);
 
   void loadHighScore();
-  void saveHighScore();
+  bool saveHighScore();
 
 private:
   uint8_t board_[BOARD_H][BOARD_W] = {};
@@ -103,7 +106,7 @@ private:
 
   uint32_t score_ = 0;
   uint32_t highScore_ = 0; 
-  uint8_t highLevel_ = 1; // <--- NEW Tracking Variable
+  uint8_t highLevel_ = 1; 
   
   uint16_t linesCleared_ = 0;
   uint8_t level_ = 1;

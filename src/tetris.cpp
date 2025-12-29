@@ -44,21 +44,32 @@ void TetrisGame::begin() {
 void TetrisGame::loadHighScore() {
   prefs_.begin("tetris", true); 
   highScore_ = prefs_.getUInt("hs", 0);
-  // NEW: Load High Level (default 1)
   highLevel_ = (uint8_t)prefs_.getUInt("hl", 1);
   prefs_.end();
 }
 
-void TetrisGame::saveHighScore() {
+// NEW: Wipes NVS data
+void TetrisGame::formatStorage() {
+  Serial.println(">>> FORMATTING HIGH SCORE STORAGE <<<");
+  prefs_.begin("tetris", false); 
+  prefs_.clear();
+  prefs_.end();
+  highScore_ = 0;
+  highLevel_ = 1;
+}
+
+bool TetrisGame::saveHighScore() {
   if (score_ > highScore_) {
     highScore_ = score_;
-    highLevel_ = level_; // Capture the level achieved in this best run
+    highLevel_ = level_; 
     
     prefs_.begin("tetris", false); 
     prefs_.putUInt("hs", highScore_);
     prefs_.putUInt("hl", (uint32_t)highLevel_);
     prefs_.end();
+    return true; 
   }
+  return false;
 }
 
 void TetrisGame::reset() {
@@ -257,7 +268,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   }
   
   if (gameOver_) {
-      saveHighScore(); 
+      if (saveHighScore()) tr.newHighScore = true; 
       tr.gameOver = true;
       return tr;
   }
@@ -282,7 +293,10 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   if (a.drop) {
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
-    if (gameOver_) { saveHighScore(); tr.gameOver = true; } 
+    if (gameOver_) { 
+        if (saveHighScore()) tr.newHighScore = true; 
+        tr.gameOver = true; 
+    } 
     return tr;
   }
 
@@ -291,14 +305,20 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
       lastFallMs_ = nowMs;
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
-    if (gameOver_) { saveHighScore(); tr.gameOver = true; } 
+    if (gameOver_) { 
+        if (saveHighScore()) tr.newHighScore = true; 
+        tr.gameOver = true; 
+    } 
     return tr;
   }
 
   if ((nowMs - lastFallMs_) >= dropIntervalMs()) {
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
-    if (gameOver_) { saveHighScore(); tr.gameOver = true; } 
+    if (gameOver_) { 
+        if (saveHighScore()) tr.newHighScore = true; 
+        tr.gameOver = true; 
+    } 
   }
 
   return tr;

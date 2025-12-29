@@ -143,40 +143,63 @@ void MatrixDisplay::drawTextCentered(String text, int16_t y, uint32_t color) {
   }
 }
 
-// --- PAGED GAME OVER (UPDATED: Current Score Only) ---
+// --- PAGED GAME OVER (Current Score Only) ---
 void MatrixDisplay::showGameOver(uint32_t score, uint8_t level) {
   uint32_t cLevelLabel = strip_.Color(0, 0, 255);   
   uint32_t cLevelVal   = strip_.Color(255, 255, 255); 
   uint32_t cScoreLabel = strip_.Color(0, 255, 0);   
   uint32_t cScoreVal   = strip_.Color(255, 255, 255);
-  // HI Label colors removed
 
   for (int i = 0; i < 3; i++) {
     strip_.clear(); drawTextCentered("LVL", 6, cLevelLabel); strip_.show(); delay(1500);
     strip_.clear(); drawTextCentered(String(level), 6, cLevelVal); strip_.show(); delay(1500);
     strip_.clear(); drawTextCentered("SCR", 6, cScoreLabel); strip_.show(); delay(1500);
     strip_.clear(); drawTextCentered(String(score), 6, cScoreVal); strip_.show(); delay(1500);
-    // HI section removed
   }
   
   strip_.clear(); strip_.show(); delay(500);
 }
 
-// --- NEW BOOT STATS ---
-void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel) {
-  uint32_t cHiLabel = strip_.Color(255, 0, 255); // Purple "HI"
-  uint32_t cHiVal   = strip_.Color(255, 255, 0); // Yellow Val
-  uint32_t cLvlLabel = strip_.Color(0, 0, 255);  // Blue "LVL"
-  uint32_t cLvlVal   = strip_.Color(255, 255, 255); // White Val
+// --- NEW HIGH SCORE CELEBRATION ---
+void MatrixDisplay::showNewHighScore(uint32_t score) {
+  // 1. Rapid RGB Strobe
+  for(int i=0; i<6; i++) {
+     strip_.fill(strip_.Color(150, 0, 0)); strip_.show(); delay(40);
+     strip_.fill(strip_.Color(0, 150, 0)); strip_.show(); delay(40);
+     strip_.fill(strip_.Color(0, 0, 150)); strip_.show(); delay(40);
+  }
+  strip_.clear();
 
-  // 1. Show High Score
+  uint32_t cNew = strip_.Color(255, 0, 255); // Purple
+  uint32_t cHi  = strip_.Color(0, 255, 255); // Cyan
+  uint32_t cScr = strip_.Color(255, 255, 0); // Yellow
+  uint32_t cVal = strip_.Color(255, 255, 255); // White
+
+  // 2. Cycle "NEW" -> "HI" -> "SCR" -> [SCORE]
+  for(int i=0; i<3; i++) {
+     strip_.clear(); drawTextCentered("NEW", 6, cNew); strip_.show(); delay(800);
+     strip_.clear(); drawTextCentered("HI", 6, cHi);  strip_.show(); delay(800);
+     strip_.clear(); drawTextCentered("SCR", 6, cScr); strip_.show(); delay(800);
+     // Flash the score value
+     for(int k=0; k<4; k++) {
+        strip_.clear(); drawTextCentered(String(score), 6, cVal); strip_.show(); delay(300);
+        strip_.clear(); strip_.show(); delay(100);
+     }
+  }
+  strip_.clear(); strip_.show(); delay(500);
+}
+
+// --- BOOT STATS ---
+void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel) {
+  uint32_t cHiLabel = strip_.Color(255, 0, 255); 
+  uint32_t cHiVal   = strip_.Color(255, 255, 0); 
+  uint32_t cLvlLabel = strip_.Color(0, 0, 255);  
+  uint32_t cLvlVal   = strip_.Color(255, 255, 255); 
+
   strip_.clear(); drawTextCentered("HI", 6, cHiLabel); strip_.show(); delay(1200);
   strip_.clear(); drawTextCentered(String(highScore), 6, cHiVal); strip_.show(); delay(1500);
-
-  // 2. Show High Level
   strip_.clear(); drawTextCentered("LVL", 6, cLvlLabel); strip_.show(); delay(1200);
   strip_.clear(); drawTextCentered(String(highLevel), 6, cLvlVal); strip_.show(); delay(1500);
-
   strip_.clear(); strip_.show(); delay(500);
 }
 
