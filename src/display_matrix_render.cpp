@@ -18,6 +18,20 @@ static uint16_t g_hueNew = 0;
 static uint32_t g_wipeStartMs = 0;
 static bool     g_firstRun = true;
 
+// Border reactive "sphere" around the falling piece (computed each frame in render()).
+static bool     g_focusActive = false;
+static int16_t  g_focusX = -1;        // matrix coordinates (0..MATRIX_W-1)
+static int16_t  g_focusY = -1;        // matrix coordinates (0..MATRIX_H-1)
+static uint8_t  g_focusStrength = 0;  // 0..255
+
+// Tuning knobs (border reaction)
+static constexpr int     FOCUS_RADIUS = 10;//9;           // pixels (matrix space)
+static constexpr uint8_t FOCUS_BOOST_OUTER = 110;//90;     // brightness boost at center (outer ring)
+static constexpr uint8_t FOCUS_BOOST_MID   = 50;     // brightness boost at center (middle ring)
+static constexpr uint8_t FOCUS_BOOST_INNER = 18;     // brightness boost at center (inner ring)
+static constexpr uint16_t FOCUS_HUE_SHIFT_MAX = 90;//700; // hue nudge amount near the piece
+static constexpr uint8_t  FOCUS_DESAT_MAX = 35;      // desaturate a bit near the piece
+
 // Level-up fade animation state
 static bool     g_isFading = false;
 static uint32_t g_fadeStartMs = 0;
@@ -67,6 +81,27 @@ static inline uint8_t themeIndexStatic(uint8_t level) {
   if (level < 1) level = 1;
   return (uint8_t)((level - 1) % NUM_THEMES);
 }
+
+static constexpr uint8_t NUM_BORDER_STYLES = 4;
+
+// Border animation changes every 10 levels:
+//  1-10: Classic (current look)
+// 11-20: Comet scan
+// 21-30: Sparkle twinkle
+// 31-40: Wavy pulse
+static inline uint8_t borderStyleForLevel(uint8_t level) {
+  if (level < 1) level = 1;
+  return (uint8_t)(((level - 1) / 10) % NUM_BORDER_STYLES);
+}
+
+static inline uint8_t hash8(uint32_t v) {
+  // Cheap deterministic hash (good enough for twinkles/sparkles)
+  v = v * 1103515245u + 12345u;
+  v ^= (v >> 16);
+  return (uint8_t)(v >> 24);
+}
+
+
 
 // Pick a border hue for each level that:
 // 1) Is strongly contrasting from the previous level border hue
@@ -218,7 +253,32 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   }
 
   bool isMeshGap = ((x ^ y) & 1);
-  return strip_.ColorHSV(finalHue, 200, isMeshGap ? 40 : 140);
+
+  uint8_t sat = 200;
+  uint8_t val = isMeshGap ? 40 : 140;
+
+  // Reactive glow around the falling piece (also applies during arcade/high-score mode)
+  if (g_focusActive && g_focusStrength) {
+    int dx = (int)x - (int)g_focusX;
+    int dy = (int)y - (int)g_focusY;
+    int d2 = dx * dx + dy * dy;
+    const int r2 = FOCUS_RADIUS * FOCUS_RADIUS;
+
+    if (d2 < r2) {
+      uint16_t inten = (uint16_t)(((r2 - d2) * 255) / r2); // 0..255
+      inten = (uint16_t)((inten * g_focusStrength) / 255);
+
+      int vv = (int)val + ((int)inten * 60) / 255;
+      if (vv > 220) vv = 220;
+      val = (uint8_t)vv;
+
+      int ss = (int)sat - ((int)inten * 18) / 255;
+      if (ss < 0) ss = 0;
+      sat = (uint8_t)ss;
+    }
+  }
+
+  return strip_.ColorHSV(finalHue, sat, val);
 }
 
 
@@ -233,6 +293,8 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   // Level 1: keep the *same* motion/animation as other levels, but render it plain (grayscale)
   // so level 2 feels like a color reward.
   const bool mutedFirstLevel = (level == 1);
+
+  const uint8_t style = borderStyleForLevel(level);
 
   const uint16_t hue = mutedFirstLevel ? 0 : pickBorderHueForLevel(level);
 
@@ -282,7 +344,151 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
     hue2 = (uint16_t)(hue2 + dh);
   }
 
-  // If this is level 1, force grayscale while keeping the same brightness motion + glints.
+  // Animation style changes every 10 levels. First 10 levels keep the "classic" look.
+  if (style == 1) {
+    // STYLE 1 (11-20): "Corner Drift Glow" — subtle, clearly different from Classic.
+    //
+    // Instead of a sweep, we softly bias brightness toward a corner that slowly
+    // (and pseudo-randomly) changes over time, with a smooth crossfade.
+    const uint32_t segMs = 7000; // how long each corner "holds" before drifting
+    const uint32_t seg = (segMs ? (nowMs / segMs) : 0);
+    const uint32_t segT = (segMs ? (nowMs % segMs) : 0);
+    const uint8_t mix = (segMs ? (uint8_t)((segT * 255UL) / segMs) : 0);
+
+    // Pick two corners for this segment and the next (deterministic "random")
+    const uint8_t cornerA = (uint8_t)(hash8(seg * 53u + (uint32_t)level * 17u) & 3u);
+    const uint8_t cornerB = (uint8_t)(hash8((seg + 1u) * 53u + (uint32_t)level * 17u) & 3u);
+
+    auto glowForCorner = [&](uint8_t c) -> uint8_t {
+      // Corners: 0=TL, 1=TR, 2=BR, 3=BL
+      const bool top  = (c == 0 || c == 1);
+      const bool left = (c == 0 || c == 3);
+
+      const uint8_t dx = left ? bx : (uint8_t)(MATRIX_W - 1 - bx);
+      const uint8_t dy = top  ? by : (uint8_t)(MATRIX_H - 1 - by);
+
+      // Manhattan distance from the corner (0 at the corner)
+      const uint8_t dist = (uint8_t)(dx + dy);
+
+      // Convert to strength 0..255 with a soft falloff.
+      // Max possible dist in 16x16 is 30.
+      const uint8_t maxDist = (uint8_t)((MATRIX_W - 1) + (MATRIX_H - 1));
+      int s = (int)maxDist - (int)dist;
+      if (s < 0) s = 0;
+
+      uint16_t strength = (uint16_t)((uint32_t)s * 255UL / (uint32_t)maxDist);
+
+      // Ease (square) for a nicer gradient
+      strength = (uint16_t)((strength * strength) >> 8);
+      return (uint8_t)strength;
+    };
+
+    const uint8_t gA = glowForCorner(cornerA);
+    const uint8_t gB = glowForCorner(cornerB);
+    const uint8_t g  = (uint8_t)((((uint16_t)gA * (uint16_t)(255 - mix)) + ((uint16_t)gB * (uint16_t)mix)) >> 8);
+
+    // Apply as a gentle bias: outer ring shows it most, inner ring least.
+    const uint8_t amp = (ring == 0) ? 58 : (ring == 1) ? 26 : 10;
+    int boost = (int)((uint16_t)g * amp / 255);
+
+    int vv = (int)val + boost;
+    if (vv > 210) vv = 210;
+    val = (uint8_t)vv;
+
+    // Tiny hue nudge so the drift reads as a "mode change" without being loud.
+    if (!mutedFirstLevel && ring != 2) {
+      const uint16_t hueWobble = (uint16_t)((uint32_t)g * 900UL / 255UL); // 0..~900
+      hue2 = (uint16_t)(hue2 + hueWobble);
+    }
+
+    // Optional: a very small "pin" highlight right at the active corner (outer ring only).
+    if (ring == 0 && g > 220) {
+      int v2 = (int)val + 18;
+      if (v2 > 225) v2 = 225;
+      val = (uint8_t)v2;
+    }
+  } else if (style == 2) {
+    // STYLE 2 (21-30): "Sparkle twinkle" — occasional white glints that pop.
+    const uint32_t tick = (uint32_t)(nowMs / 170);
+    const uint8_t h = hash8((uint32_t)level * 257u + (uint32_t)bx * 41u + (uint32_t)by * 97u + tick * 53u + (uint32_t)ring * 151u);
+
+    // ~2–4 sparkles across the whole border at any given moment
+    if (h < 6 && ring != 2) {
+      sat = (uint8_t)(sat / 5); // subtle sparkle (desaturated)
+      int vv = (int)val + 80;
+      if (vv > 220) vv = 220;
+      val = (uint8_t)vv;
+    } else {
+      // Gentle scintillation (keeps it lively even when not sparkling)
+      const int shimmer = (int)tri8((uint8_t)(((nowMs >> 3) + (bx * 11) + (by * 7)) & 0xFF)) - 128;
+      int dv2 = (shimmer * ((ring == 0) ? 10 : (ring == 1) ? 6 : 3)) / 128;
+
+      int vv = (int)val + dv2;
+      if (vv < vMin) vv = vMin;
+      if (vv > vMax) vv = vMax;
+      val = (uint8_t)vv;
+    }
+  } else if (style == 3) {
+    // STYLE 3 (31-40): "Wavy pulse" — a traveling wave that shifts brightness + hue.
+    const int wA = (int)tri8((uint8_t)(((nowMs >> 3) + (by * 13)) & 0xFF)) - 128;
+    const int wB = (int)tri8((uint8_t)(((nowMs >> 2) + (by * 7) + (bx * 19)) & 0xFF)) - 128;
+
+    int dvw = (wA * ((ring == 0) ? 26 : (ring == 1) ? 18 : 6)) / 128 +
+              (wB * ((ring == 0) ? 18 : (ring == 1) ? 12 : 4)) / 128;
+
+    int vv = (int)val + dvw;
+    if (vv < vMin) vv = vMin;
+    if (vv > vMax) vv = vMax;
+    val = (uint8_t)vv;
+
+    if (ring != 2) {
+      int dh = (wA * ((ring == 0) ? 2200 : 1400)) / 128;
+      hue2 = (uint16_t)(hue2 + dh);
+
+      int ds = (wB * ((ring == 0) ? 26 : 16)) / 128;
+      int s = (int)sat + ds;
+      if (s < 0) s = 0;
+      if (s > 255) s = 255;
+      sat = (uint8_t)s;
+    }
+  }
+
+    // Reactive "sphere of light" around the falling piece.
+  // Border pixels near the active piece get a gentle brightness lift, slight desaturation,
+  // and a tiny hue nudge (so it reads as interactive, but stays subtle).
+  if (g_focusActive && g_focusStrength) {
+    int dx = (int)bx - (int)g_focusX;
+    int dy = (int)by - (int)g_focusY;
+    int d2 = dx * dx + dy * dy;
+    const int r2 = FOCUS_RADIUS * FOCUS_RADIUS;
+
+    if (d2 < r2) {
+      uint16_t inten = (uint16_t)(((r2 - d2) * 255) / r2); // 0..255
+      inten = (uint16_t)((inten * g_focusStrength) / 255);
+
+      const uint8_t ampV = (ring == 0) ? FOCUS_BOOST_OUTER : (ring == 1) ? FOCUS_BOOST_MID : FOCUS_BOOST_INNER;
+
+      int vv = (int)val + ((int)inten * (int)ampV) / 255;
+      if (vv > 235) vv = 235;
+      val = (uint8_t)vv;
+
+      // Desaturate slightly as it brightens (looks like a glow).
+      if (ring != 2) {
+        int ss = (int)sat - ((int)inten * (int)FOCUS_DESAT_MAX) / 255;
+        if (ss < 0) ss = 0;
+        sat = (uint8_t)ss;
+      }
+
+      // Tiny hue nudge: bias by left/right side of the piece.
+      if (!mutedFirstLevel && ring != 2) {
+        int dir = (dx >= 0) ? 1 : -1;
+        int dh = dir * ((int)inten * (int)FOCUS_HUE_SHIFT_MAX) / 255;
+        hue2 = (uint16_t)(hue2 + dh);
+      }
+    }
+  }
+
+// If this is level 1, force grayscale while keeping the same brightness motion + glints.
   if (mutedFirstLevel) {
     sat = 0;
     hue2 = 0;
@@ -396,6 +602,34 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   const uint32_t elapsed = clearing ? g.clearingElapsedMs(nowMs) : 0;
   const uint8_t alphaLin = g.clearingAlpha(nowMs);
   const uint8_t alpha = (uint8_t)(((uint16_t)alphaLin * (uint16_t)alphaLin) >> 8);
+
+  // Compute a focus point from the current falling piece so borders can react to it.
+  g_focusActive = false;
+  g_focusStrength = 0;
+  g_focusX = -1;
+  g_focusY = -1;
+
+  if (!g.isGameOver() && !clearing) {
+    TetrisGame::Cell fcells[4];
+    uint8_t fn = 0;
+    g.getCurrentPieceBlocks(fcells, fn);
+
+    if (fn > 0) {
+      int sumx = 0;
+      int sumy = 0;
+      for (uint8_t i = 0; i < fn; i++) {
+        sumx += fcells[i].x;
+        sumy += fcells[i].y;
+      }
+
+      // Convert from board coords -> matrix coords
+      g_focusX = (int16_t)(BOARD_OFFSET_X + (sumx / (int)fn));
+      g_focusY = (int16_t)(BOARD_OFFSET_Y + (sumy / (int)fn));
+
+      g_focusActive = true;
+      g_focusStrength = 255;
+    }
+  }
 
   for (uint8_t by = 0; by < BOARD_H; by++) {
     for (uint8_t bx = 0; bx < BOARD_W; bx++) {
