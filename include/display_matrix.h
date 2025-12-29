@@ -42,7 +42,7 @@ private:
   uint32_t pieceColor(uint8_t level, uint8_t pieceId) const;
   uint32_t scaleColor(uint32_t c, uint8_t alpha) const;
 
-  uint32_t solidBorderForLevel(uint8_t level, uint8_t x) const;
+  uint32_t solidBorderForLevel(uint8_t level, uint8_t x, uint8_t y, uint32_t nowMs) const;
 
   void drawChar(int16_t x, int16_t y, char c, uint32_t color);
   void drawTextCentered(String text, int16_t y, uint32_t color);

@@ -69,7 +69,7 @@ static uint32_t g_fadeDuration = 2000;
 // Level-up waterfall animation state (border)
 static bool     g_waterfallActive = false;
 static uint32_t g_waterfallStartMs = 0;
-static uint32_t g_waterfallDuration = 950;   // <- tweak this for faster/slower waterfall
+static uint32_t g_waterfallDuration = 950;   // tweak for faster/slower waterfall
 static uint8_t  g_waterfallFromLevel = 1;
 static uint8_t  g_waterfallToLevel = 1;
 
@@ -258,13 +258,12 @@ bool MatrixDisplay::showTwoLineTitleValue(const String& title, const String& val
   const int16_t valueW = (int16_t)((int)value.length() * 4 - 1);
 
   // Animation tuning
-  const uint16_t pxMs = 320;     // ms per pixel scroll speed (slower = higher number)
-  const uint8_t overshoot = 1;   // how far past the edge to go
-  const uint32_t startHoldMs = 800;  // pause before moving
-  const uint32_t edgeHoldMs  = 800;  // pause at each edge
-  const uint32_t endHoldMs   = 1200; // pause before switching
+  const uint16_t pxMs = 320;     // ms per pixel scroll speed
+  const uint8_t overshoot = 1;
+  const uint32_t startHoldMs = 800;
+  const uint32_t edgeHoldMs  = 800;
+  const uint32_t endHoldMs   = 1200;
 
-  // No need to scroll if it fits
   if (valueW <= MATRIX_W) {
     const uint32_t startMs = millis();
     while ((millis() - startMs) < durationMs) {
@@ -278,17 +277,14 @@ bool MatrixDisplay::showTwoLineTitleValue(const String& title, const String& val
     return false;
   }
 
-  // Too wide → create back-and-forth “wiggle” scroll
   const int16_t maxShift = valueW - MATRIX_W;
   const int16_t leftEdge  = -(overshoot);
   const int16_t rightEdge = maxShift + overshoot;
 
-  // Compute one full cycle time (left → right → left)
   const uint32_t oneWayMs = (uint32_t)(rightEdge - leftEdge) * pxMs;
   const uint32_t cycleMs = (2 * oneWayMs) + (2 * edgeHoldMs);
   const uint32_t startMs = millis();
 
-  // Ensure duration covers at least one complete cycle
   uint32_t runMs = durationMs;
   if (runMs < (cycleMs + startHoldMs + endHoldMs))
     runMs = cycleMs + startHoldMs + endHoldMs;
@@ -301,18 +297,18 @@ bool MatrixDisplay::showTwoLineTitleValue(const String& title, const String& val
     int16_t shift = 0;
 
     if (elapsed < startHoldMs) {
-      shift = 0;  // hold start
+      shift = 0;
     } else {
       uint32_t t = (elapsed - startHoldMs) % cycleMs;
 
       if (t < edgeHoldMs) {
-        shift = leftEdge;  // hold left
+        shift = leftEdge;
       } else if (t < edgeHoldMs + oneWayMs) {
-        shift = leftEdge + (int16_t)((t - edgeHoldMs) / (float)pxMs); // left→right
+        shift = leftEdge + (int16_t)((t - edgeHoldMs) / (float)pxMs);
       } else if (t < edgeHoldMs + oneWayMs + edgeHoldMs) {
-        shift = rightEdge; // hold right
+        shift = rightEdge;
       } else {
-        shift = rightEdge - (int16_t)((t - edgeHoldMs - oneWayMs - edgeHoldMs) / (float)pxMs); // right→left
+        shift = rightEdge - (int16_t)((t - edgeHoldMs - oneWayMs - edgeHoldMs) / (float)pxMs);
       }
     }
 
@@ -327,19 +323,17 @@ bool MatrixDisplay::showTwoLineTitleValue(const String& title, const String& val
 }
 
 void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
-  // Single splash screen: "TET" on top, "RIS" on bottom, animated T-tetromino in the middle.
   const uint32_t startMs = millis();
   while ((millis() - startMs) < durationMs) {
     if (abortFn && abortFn()) return;
 
     uint32_t now = millis();
 
-    // Soft pulse using a triangle wave
-    uint16_t phase = (uint16_t)((now / 8) & 0x01FF); // 0..511
+    uint16_t phase = (uint16_t)((now / 8) & 0x01FF);
     if (phase > 255) phase = (uint16_t)(511 - phase);
-    uint8_t v = (uint8_t)(60 + (phase * 170) / 255); // 60..230
+    uint8_t v = (uint8_t)(60 + (phase * 170) / 255);
 
-    uint32_t cText = strip_.Color(0, v, v); // cyan-ish
+    uint32_t cText = strip_.Color(0, v, v);
     uint32_t cBlock = strip_.ColorHSV((uint16_t)(now * 40), 255, v);
 
     strip_.clear();
@@ -347,7 +341,6 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
     drawTextCentered("TET", 1, cText);
     drawTextCentered("RIS", 10, cText);
 
-    // Draw a chunky T tetromino (each block is 2x2 pixels)
     auto block2 = [&](int16_t x, int16_t y) {
       setPixel(x + 0, y + 0, cBlock);
       setPixel(x + 1, y + 0, cBlock);
@@ -355,13 +348,11 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
       setPixel(x + 1, y + 1, cBlock);
     };
 
-    // Centered around x ~6, y ~5
-    block2(6, 4);  // top middle
-    block2(4, 6);  // bottom left
-    block2(6, 6);  // bottom middle
-    block2(8, 6);  // bottom right
+    block2(6, 4);
+    block2(4, 6);
+    block2(6, 6);
+    block2(8, 6);
 
-    // Tiny sparkle
     setPixel(12, 7, strip_.Color(v, v, v));
 
     strip_.show();
@@ -369,7 +360,6 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
   }
 }
 
-// --- GAME OVER (2-line pages) ---
 void MatrixDisplay::showGameOver(uint32_t score, uint8_t level) {
   uint32_t cLevelLabel = strip_.Color(0, 0, 255);
   uint32_t cLevelVal   = strip_.Color(255, 255, 255);
@@ -382,9 +372,7 @@ void MatrixDisplay::showGameOver(uint32_t score, uint8_t level) {
   strip_.clear(); strip_.show(); delay(250);
 }
 
-// --- NEW HIGH SCORE CELEBRATION ---
 void MatrixDisplay::showNewHighScore(uint32_t score) {
-  // Rapid RGB strobe
   for (int i = 0; i < 6; i++) {
     strip_.fill(strip_.Color(150, 0, 0)); strip_.show(); delay(40);
     strip_.fill(strip_.Color(0, 150, 0)); strip_.show(); delay(40);
@@ -393,25 +381,22 @@ void MatrixDisplay::showNewHighScore(uint32_t score) {
   strip_.clear();
   strip_.show();
 
-  uint32_t cNew = strip_.Color(255, 0, 255);    // Purple
-  uint32_t cVal = strip_.Color(255, 255, 255);  // White
+  uint32_t cNew = strip_.Color(255, 0, 255);
+  uint32_t cVal = strip_.Color(255, 255, 255);
 
   (void)showTwoLineTitleValue("NEW", String(score), cNew, cVal, 9000, nullptr);
 
   strip_.clear(); strip_.show(); delay(250);
 }
 
-// --- BOOT STATS ---
 void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel, AbortFn abortFn) {
   uint32_t cHiLabel   = strip_.Color(255, 0, 255);
   uint32_t cHiVal     = strip_.Color(255, 255, 0);
   uint32_t cLvlLabel  = strip_.Color(0, 0, 255);
   uint32_t cLvlVal    = strip_.Color(255, 255, 255);
 
-  // Longer on each screen, plus a small gap between screens.
   if (showTwoLineTitleValue("HI", String(highScore), cHiLabel, cHiVal, 9000, abortFn)) return;
 
-  // Inter-screen pause (skippable)
   uint32_t gapStart = millis();
   while ((millis() - gapStart) < 900) {
     if (abortFn && abortFn()) return;
@@ -424,7 +409,6 @@ void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel, AbortFn
   delay(200);
 }
 
-// --- RENDER ---
 uint16_t MatrixDisplay::XY(uint8_t x, uint8_t y) const {
   if (x >= MATRIX_W || y >= MATRIX_H) return 0;
   uint8_t xx = (uint8_t)(MATRIX_W - 1 - x);
@@ -503,37 +487,92 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   return strip_.ColorHSV(finalHue, 200, isMeshGap ? 40 : 140);
 }
 
-uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx) const {
+uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t by, uint32_t nowMs) const {
   if (level < 1) level = 1;
 
-  // Left border: x=0..(BOARD_OFFSET_X-1)
-  // Right border: x=(BOARD_OFFSET_X+BOARD_W)..(MATRIX_W-1)
-  // We treat the border as 3 "rings" (outer edge -> inner edge).
   uint8_t ring = 0;
   if (bx < BOARD_OFFSET_X) ring = bx;
   else ring = (uint8_t)(MATRIX_W - 1 - bx);
   if (ring > 2) ring = 2;
 
-  // Level hue is chosen to be strongly different from the previous level,
-  // and also far away from the current level's block palette hues.
   const uint16_t hue = pickBorderHueForLevel(level);
 
-  // Edge definition: same hue, but adjust saturation/brightness across rings.
-  // IMPORTANT: the pixel nearest the blocks should NOT compete with block colors.
-  // So the inner ring is intentionally darker and less saturated.
   uint8_t sat = 255;
-  uint8_t val = 92;   // outer edge pops
+  uint8_t val = 92;
 
   if (ring == 1) { sat = 205; val = 68; }
-  else if (ring == 2) { sat = 120; val = 38; } // closest to blocks: subdued
+  else if (ring == 2) { sat = 120; val = 38; }
 
-  return strip_.ColorHSV(hue, sat, val);
+  auto tri8 = [](uint8_t v) -> uint8_t {
+    return (v & 0x80) ? (uint8_t)(255 - ((v & 0x7F) << 1)) : (uint8_t)((v & 0x7F) << 1);
+  };
+
+  // Faster + stronger motion so it’s *obviously* animated
+  const uint8_t breathT = tri8((uint8_t)((nowMs >> 4) & 0xFF)); // ~4s
+  const uint8_t rippleT = tri8((uint8_t)(((nowMs >> 2) + (by * 29) + (bx * 13)) & 0xFF)); // ~1s drift
+  const int breath = (int)breathT - 128;
+  const int ripple = (int)rippleT - 128;
+
+  const int ampBreath = (ring == 0) ? 36 : (ring == 1) ? 24 : 7;
+  const int ampRipple = (ring == 0) ? 30 : (ring == 1) ? 20 : 5;
+
+  int dv = (breath * ampBreath) / 128 + (ripple * ampRipple) / 128;
+
+  // Wider brightness window (still keeps inner ring subdued)
+  int vMin = (ring == 0) ? 54  : (ring == 1) ? 34  : 22;
+  int vMax = (ring == 0) ? 172 : (ring == 1) ? 128 : 60;
+
+  int v = (int)val + dv;
+  if (v < vMin) v = vMin;
+  if (v > vMax) v = vMax;
+  val = (uint8_t)v;
+
+  // Stronger saturation shimmer (outer/middle only)
+  if (ring != 2) {
+    int ds = (ripple * ((ring == 0) ? 22 : 14)) / 128;
+    int s = (int)sat + ds;
+    if (s < 0) s = 0;
+    if (s > 255) s = 255;
+    sat = (uint8_t)s;
+  }
+
+  // Stronger hue shimmer (outer/middle only)
+  uint16_t hue2 = hue;
+  if (ring != 2) {
+    int dh = (ripple * ((ring == 0) ? 1400 : 900)) / 128;
+    hue2 = (uint16_t)(hue2 + dh);
+  }
+
+  // ✅ This is the “band” glint you were looking for
+  if (ring == 0) {
+    uint8_t band = (uint8_t)(((nowMs / 22) + (bx * 9) + (by * 5)) & 0xFF);
+
+    if (band < 34) {
+      int boost = (34 - band) * 3;
+      int vv = (int)val + boost;
+      if (vv > 190) vv = 190;
+      val = (uint8_t)vv;
+    } else if (band > 222) {
+      int boost = (band - 222) * 3;
+      int vv = (int)val + boost;
+      if (vv > 190) vv = 190;
+      val = (uint8_t)vv;
+    }
+  } else if (ring == 1) {
+    uint8_t band = (uint8_t)(((nowMs / 28) + (bx * 7) + (by * 4)) & 0xFF);
+    if (band < 30) {
+      int boost = (30 - band) * 2;
+      int vv = (int)val + boost;
+      if (vv > 150) vv = 150;
+      val = (uint8_t)vv;
+    }
+  }
+
+  return strip_.ColorHSV(hue2, sat, val);
 }
 
 uint32_t MatrixDisplay::solidLevelBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const {
-  (void)y;
-  (void)nowMs;
-  return solidBorderForLevel(g.level(), x);
+  return solidBorderForLevel(g.level(), x, y, nowMs);
 }
 
 void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
@@ -584,8 +623,8 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
 
         if (g_waterfallActive && wfFrontY > -900) {
           if (!chasingHighScore) {
-            uint32_t oldC = solidBorderForLevel(g_waterfallFromLevel, x);
-            uint32_t newC = solidBorderForLevel(g_waterfallToLevel, x);
+            uint32_t oldC = solidBorderForLevel(g_waterfallFromLevel, x, y, nowMs);
+            uint32_t newC = solidBorderForLevel(g_waterfallToLevel, x, y, nowMs);
 
             bc = ((int16_t)y <= wfFrontY) ? newC : oldC;
 
