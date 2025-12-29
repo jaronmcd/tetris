@@ -222,7 +222,11 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   else ring = (uint8_t)(MATRIX_W - 1 - bx);
   if (ring > 2) ring = 2;
 
-  const uint16_t hue = pickBorderHueForLevel(level);
+  // Level 1: keep the *same* motion/animation as other levels, but render it plain (grayscale)
+  // so level 2 feels like a color reward.
+  const bool mutedFirstLevel = (level == 1);
+
+  const uint16_t hue = mutedFirstLevel ? 0 : pickBorderHueForLevel(level);
 
   uint8_t sat = 255;
   uint8_t val = 92;
@@ -268,6 +272,12 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   if (ring != 2) {
     int dh = (ripple * ((ring == 0) ? 1400 : 900)) / 128;
     hue2 = (uint16_t)(hue2 + dh);
+  }
+
+  // If this is level 1, force grayscale while keeping the same brightness motion + glints.
+  if (mutedFirstLevel) {
+    sat = 0;
+    hue2 = 0;
   }
 
   // ✅ This is the “band” glint you were looking for
