@@ -1,19 +1,9 @@
 #include <Arduino.h>
 #include "tetris.h"
+#include "shapes.h"
 #include <string.h>
 #include "esp_system.h"
-
-static const uint16_t SHAPES[7][4] = {
-  { 0x0F00, 0x2222, 0x00F0, 0x4444 }, // I
-  { 0x6600, 0x6600, 0x6600, 0x6600 }, // O
-  { 0x0E40, 0x4C40, 0x4E00, 0x4640 }, // T
-  { 0x06C0, 0x8C40, 0x06C0, 0x8C40 }, // S
-  { 0x0C60, 0x4C80, 0x0C60, 0x4C80 }, // Z
-  { 0x8E00, 0x6440, 0x0E20, 0x44C0 }, // J
-  { 0x2E00, 0x4460, 0x0E80, 0xC440 }  // L
-};
-
-const uint16_t (*TetrisGame::getShapes())[4] { return SHAPES; }
+const uint16_t (*TetrisGame::getShapes())[4] { return TETRIS_SHAPES; }
 
 bool TetrisGame::maskCell(uint16_t m, uint8_t r, uint8_t c) {
   uint8_t bit = 15 - (r * 4 + c);
@@ -21,7 +11,7 @@ bool TetrisGame::maskCell(uint16_t m, uint8_t r, uint8_t c) {
 }
 
 bool TetrisGame::fits(const uint8_t board[BOARD_H][BOARD_W], uint8_t type, uint8_t rot, int8_t px, int8_t py) {
-  uint16_t m = SHAPES[type][rot & 3];
+  uint16_t m = TETRIS_SHAPES[type][rot & 3];
   for (uint8_t r = 0; r < 4; r++) {
     for (uint8_t c = 0; c < 4; c++) {
       if (!maskCell(m, r, c)) continue;
@@ -151,7 +141,7 @@ void TetrisGame::spawnNext() {
 }
 
 void TetrisGame::placePieceToBoard(const Piece& p) {
-  uint16_t m = SHAPES[p.type][p.rot & 3];
+  uint16_t m = TETRIS_SHAPES[p.type][p.rot & 3];
   uint8_t id = (uint8_t)(p.type + 1);
   for (uint8_t r = 0; r < 4; r++) {
     for (uint8_t c = 0; c < 4; c++) {
@@ -332,7 +322,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
 
 void TetrisGame::getCurrentPieceBlocks(Cell* out, uint8_t& count) const {
   count = 0;
-  uint16_t m = SHAPES[cur_.type][cur_.rot & 3];
+  uint16_t m = TETRIS_SHAPES[cur_.type][cur_.rot & 3];
   for (uint8_t r = 0; r < 4; r++) {
     for (uint8_t c = 0; c < 4; c++) {
       if (!maskCell(m, r, c)) continue;
