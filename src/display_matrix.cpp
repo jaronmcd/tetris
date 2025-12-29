@@ -102,6 +102,78 @@ static uint16_t hueDistance(uint16_t a, uint16_t b) {
   return d;
 }
 
+static inline uint8_t themeIndexStatic(uint8_t level) {
+  if (level < 1) level = 1;
+  return (uint8_t)((level - 1) % NUM_THEMES);
+}
+
+// Pick a border hue for each level that:
+// 1) Is strongly contrasting from the previous level border hue
+// 2) Stays away from the current level's piece palette hues
+// The result is cached so it's deterministic and fast.
+static uint16_t pickBorderHueForLevel(uint8_t level) {
+  static uint16_t cache[256];
+  static uint8_t computedUpTo = 0;
+
+  if (level < 1) level = 1;
+  if (level <= computedUpTo) return cache[level];
+
+  // Golden-ratio-ish step: consecutive levels are always far apart in hue.
+  // (Fixed-point: ~0.618 * 65536 ≈ 40503)
+  static constexpr uint16_t PHI_STEP = 40503;
+
+  // Candidate offsets to "dodge" the piece palette while preserving contrast.
+  static constexpr uint16_t OFFS[8] = {
+    0, 16384, 32768, 49152, 8192, 24576, 40960, 57344
+  };
+
+  for (uint16_t L = computedUpTo + 1; L <= level; L++) {
+    uint16_t prevHue = (L > 1) ? cache[L - 1] : 0;
+
+    uint16_t base = (uint16_t)((uint16_t)L * PHI_STEP);
+    uint8_t tIdx = themeIndexStatic((uint8_t)L);
+
+    uint16_t best = base;
+    uint32_t bestScore = 0;
+
+    // Targets (tuned for 16x16: vivid but not block-like)
+    static constexpr uint16_t MIN_PREV = 21000;   // strong contrast from last level
+    static constexpr uint16_t MIN_PAL  = 7000;    // keep away from piece hues
+
+    for (uint8_t k = 0; k < 8; k++) {
+      uint16_t h = (uint16_t)(base + OFFS[k]);
+
+      // Distance to previous level hue (contrast)
+      uint16_t dPrev = (L > 1) ? hueDistance(h, prevHue) : 65535;
+
+      // Distance to piece palette hues (avoid conflicts)
+      uint16_t dPal = 65535;
+      for (uint8_t pid = 1; pid <= 7; pid++) {
+        uint16_t ph = rgbToHue(THEMES[tIdx][pid]);
+        uint16_t d = hueDistance(h, ph);
+        if (d < dPal) dPal = d;
+      }
+
+      // Prefer meeting thresholds; otherwise still pick the best overall.
+      uint32_t score = (uint32_t)dPal * 2u + (uint32_t)dPrev;
+      bool ok = (dPrev >= MIN_PREV) && (dPal >= MIN_PAL);
+
+      // Slight bias to prefer candidates that satisfy thresholds.
+      if (ok) score += 300000u;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = h;
+      }
+    }
+
+    cache[L] = best;
+  }
+
+  computedUpTo = level;
+  return cache[level];
+}
+
 MatrixDisplay::MatrixDisplay() : strip_(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800) {}
 
 void MatrixDisplay::begin() {
@@ -442,28 +514,18 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx) const {
   else ring = (uint8_t)(MATRIX_W - 1 - bx);
   if (ring > 2) ring = 2;
 
-  // Pick a base hue per level, then nudge it away from the current theme's
-  // piece hues so the border reads as a distinct, stable "level color".
-  const uint8_t tIdx = themeIndex(level);
-  uint16_t hue = (uint16_t)(8000u + (uint32_t)(level - 1) * 5200u);
-
-  for (uint8_t tries = 0; tries < 6; tries++) {
-    uint16_t minD = 65535;
-    for (uint8_t pid = 1; pid <= 7; pid++) {
-      uint16_t ph = rgbToHue(THEMES[tIdx][pid]);
-      uint16_t d = hueDistance(hue, ph);
-      if (d < minD) minD = d;
-    }
-    if (minD >= 5200) break;         // far enough from the palette
-    hue = (uint16_t)(hue + 9000u);   // rotate hue away
-  }
+  // Level hue is chosen to be strongly different from the previous level,
+  // and also far away from the current level's block palette hues.
+  const uint16_t hue = pickBorderHueForLevel(level);
 
   // Edge definition: same hue, but adjust saturation/brightness across rings.
-  // Outer edge = darker & punchier; inner edge = brighter & slightly softer.
+  // IMPORTANT: the pixel nearest the blocks should NOT compete with block colors.
+  // So the inner ring is intentionally darker and less saturated.
   uint8_t sat = 255;
-  uint8_t val = 50;
-  if (ring == 1) { sat = 220; val = 85; }
-  else if (ring == 2) { sat = 180; val = 135; }
+  uint8_t val = 92;   // outer edge pops
+
+  if (ring == 1) { sat = 205; val = 68; }
+  else if (ring == 2) { sat = 120; val = 38; } // closest to blocks: subdued
 
   return strip_.ColorHSV(hue, sat, val);
 }
@@ -471,9 +533,6 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx) const {
 uint32_t MatrixDisplay::solidLevelBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const {
   (void)y;
   (void)nowMs;
-
-  // Keep borders "stable per-level" (no slow blend) — the level transition is
-  // handled by the waterfall animation in render().
   return solidBorderForLevel(g.level(), x);
 }
 
@@ -503,17 +562,14 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     else fadeStep = (uint8_t)((elapsed * 255) / g_fadeDuration);
   }
 
-  // Border area
   const bool chasingHighScore = g.allowHighScore() && (g.score() > g.highScore());
 
-  // "Waterfall" front line (moves top -> bottom during a level transition)
   int16_t wfFrontY = -999;
   if (g_waterfallActive) {
     uint32_t wfElapsed = (nowMs >= g_waterfallStartMs) ? (nowMs - g_waterfallStartMs) : g_waterfallDuration;
     if (wfElapsed >= g_waterfallDuration) {
       g_waterfallActive = false;
     } else {
-      // Start slightly above the screen and finish slightly below for nicer motion
       wfFrontY = (int16_t)(-2 + (int32_t)wfElapsed * (MATRIX_H + 4) / (int32_t)g_waterfallDuration);
     }
   }
@@ -528,18 +584,15 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
 
         if (g_waterfallActive && wfFrontY > -900) {
           if (!chasingHighScore) {
-            // In normal mode, the waterfall actually swaps the border from old -> new level color
             uint32_t oldC = solidBorderForLevel(g_waterfallFromLevel, x);
             uint32_t newC = solidBorderForLevel(g_waterfallToLevel, x);
 
             bc = ((int16_t)y <= wfFrontY) ? newC : oldC;
 
-            // Bright highlight band at the falling edge
             int16_t dy = (int16_t)y - wfFrontY;
             if (dy == 0) bc = strip_.Color(255, 255, 255);
             else if (dy == 1 || dy == -1) bc = lerpColorRGB(bc, strip_.Color(255, 255, 255), 120);
           } else {
-            // In high-score chase mode, keep the arcade border but add a falling "shine"
             int16_t dy = (int16_t)y - wfFrontY;
             if (dy == 0) bc = strip_.Color(255, 255, 255);
             else if (dy == 1 || dy == -1) bc = lerpColorRGB(bc, strip_.Color(255, 255, 255), 96);
@@ -552,7 +605,6 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     }
   }
 
-  // Board
   auto b = g.board();
   const bool clearing = g.isClearingLines();
   const uint32_t elapsed = clearing ? g.clearingElapsedMs(nowMs) : 0;
@@ -594,7 +646,6 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     }
   }
 
-  // Active piece
   if (!g.isGameOver() && !clearing) {
     TetrisGame::Cell cells[4];
     uint8_t n = 0;
