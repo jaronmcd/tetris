@@ -104,6 +104,26 @@ static inline uint8_t hash8(uint32_t v) {
   return (uint8_t)(v >> 24);
 }
 
+static inline uint16_t isqrt32(uint32_t x) {
+  // Integer sqrt for small-ish values (fast, no floats).
+  uint32_t op = x;
+  uint32_t res = 0;
+  uint32_t one = 1uL << 30; // second-to-top bit
+
+  while (one > op) one >>= 2;
+
+  while (one != 0) {
+    if (op >= res + one) {
+      op -= res + one;
+      res = (res >> 1) + one;
+    } else {
+      res >>= 1;
+    }
+    one >>= 2;
+  }
+  return (uint16_t)res;
+}
+
 
 
 // Pick a border hue for each level that:
@@ -267,30 +287,61 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   uint32_t base = strip_.ColorHSV(finalHue, sat, val);
 
   // Reactive effect while high-score borders are active:
-  // Blend into a localized rainbow "aura" near the falling piece.
-  // (Full rainbow at the center, fading to normal at the edge.)
+  // Continuous rainbow irradiation from the falling piece (not just a single ring).
+  //
+  // Idea:
+  //  - Strength ramps up as the piece approaches ANY edge.
+  //  - Border color is a moving rainbow field whose phase depends on distance from the piece,
+  //    so it looks like energy propagating outward.
   if (g_focusActive && g_focusStrength) {
+    // How close is the piece to the nearest matrix edge?
+    int minEdge = (int)g_focusX;
+    int t = (int)(MATRIX_W - 1) - (int)g_focusX; if (t < minEdge) minEdge = t;
+    t = (int)g_focusY; if (t < minEdge) minEdge = t;
+    t = (int)(MATRIX_H - 1) - (int)g_focusY; if (t < minEdge) minEdge = t;
+
+    // 0 at edge => strongest. Past ~7 px from edge => mostly off.
+    int edgeFactor = 255 - minEdge * 36;
+    if (edgeFactor < 0) edgeFactor = 0;
+    if (edgeFactor > 255) edgeFactor = 255;
+
+    // Distance from this border pixel to the piece center (matrix coords).
     int dx = (int)x - (int)g_focusX;
     int dy = (int)y - (int)g_focusY;
-    int d2 = dx * dx + dy * dy;
-    const int r2 = FOCUS_RADIUS * FOCUS_RADIUS;
+    uint32_t d2 = (uint32_t)(dx * dx + dy * dy);
+    uint16_t dist = isqrt32(d2); // 0..~32 on 16x16
 
-    if (d2 < r2) {
-      uint16_t inten = (uint16_t)(((r2 - d2) * 255) / r2); // 0..255
-      inten = (uint16_t)((inten * g_focusStrength) / 255);
+    // Per-pixel falloff: nearest border side lights up most, far side least.
+    int near = 255 - (int)dist * 18; // tweak 18..14 for longer reach
+    if (near < 0) near = 0;
 
-      // Fast, lively hue rotation with a little spatial phase so it looks "rainbow-y".
+    // Overall mix amount (0..255)
+    uint16_t mix16 = (uint16_t)((uint32_t)edgeFactor * (uint32_t)near / 255u);
+    mix16 = (uint16_t)((uint32_t)mix16 * (uint32_t)g_focusStrength / 255u);
+    uint8_t mix = (uint8_t)mix16;
+
+    if (mix) {
+      auto tri8 = [](uint8_t v) -> uint8_t {
+        return (v & 0x80) ? (uint8_t)(255 - ((v & 0x7F) << 1)) : (uint8_t)((v & 0x7F) << 1);
+      };
+
+      // Outward-traveling wavefield:
+      // phase increases with distance and decreases with time => looks like it moves outward.
+      const uint8_t wave = tri8((uint8_t)((dist * 20u - (uint32_t)(nowMs / 10u)) & 0xFF));
+
+      // Hue also depends on distance, so you get a continuous "rainbow radiating" vibe.
       uint16_t hue = (uint16_t)(
-        (uint32_t)nowMs * 70UL +
-        (uint32_t)x * 4200UL +
-        (uint32_t)y * 2600UL
+        (uint32_t)nowMs * 55UL +
+        (uint32_t)dist * 11000UL +
+        (uint32_t)x * 900UL +
+        (uint32_t)y * 700UL
       );
 
-      // Keep it bright, but respect the mesh gap dimming a bit.
-      uint8_t rVal = (val < 80) ? 170 : 255;
+      // Brightness breathes with the wave (continuous, not thresholded).
+      uint8_t rVal = (uint8_t)(140 + ((uint16_t)wave * 115u) / 255u); // 140..255
       uint32_t rainbow = strip_.ColorHSV(hue, 255, rVal);
 
-      return lerpColorRGB(base, rainbow, (uint8_t)inten);
+      return lerpColorRGB(base, rainbow, mix);
     }
   }
 
