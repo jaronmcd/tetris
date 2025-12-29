@@ -15,11 +15,25 @@ static uint32_t lastFrameMs = 0;
 
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
-static bool aiMode = true;                 
-static constexpr uint32_t IDLE_TO_AI_MS = 8000;  
+static bool aiMode = true;
+static constexpr uint32_t IDLE_TO_AI_MS = 8000;
 
 static inline bool anyHumanAction(const Actions& a) {
   return a.left || a.right || a.rotate || a.down || a.drop || a.restart;
+}
+
+// Boot skip state
+static bool g_bootSkipped = false;
+
+// Called frequently during boot screens. Returns true to abort/skip.
+static bool bootAbort() {
+  input.update();
+  Actions a = input.readActions();
+  if (anyHumanAction(a)) {
+    g_bootSkipped = true;
+    return true;
+  }
+  return false;
 }
 
 void setup() {
@@ -37,11 +51,22 @@ void setup() {
     game.formatStorage(); // Wipe data
   }
 
-  // Show stats (will be 0 if wiped above)
-  Serial.print("Booting... High Score: "); Serial.print(game.highScore());
-  Serial.print(" | High Level: "); Serial.println(game.highLevel());
-  
-  display.showBootStats(game.highScore(), game.highLevel());
+  // Optional splash/logo (skippable with any input)
+  display.showBootLogo(3500, &bootAbort);
+
+  // Show boot stats (also skippable)
+  if (!g_bootSkipped) {
+    Serial.print("Booting... High Score: "); Serial.print(game.highScore());
+    Serial.print(" | High Level: "); Serial.println(game.highLevel());
+    display.showBootStats(game.highScore(), game.highLevel(), &bootAbort);
+  }
+
+  // Small flush so the "skip" button doesn't also immediately move/drop on first frame.
+  for (int i = 0; i < 4; i++) {
+    input.update();
+    input.readActions();
+    delay(20);
+  }
 
   ai.reset();
   lastHumanMs = millis();
@@ -80,12 +105,10 @@ void loop() {
     act = ai.think(game, now);
   }
 
-  // --- CHANGED: DETERMINE IF HIGH SCORE IS ALLOWED ---
-  // If human, always true.
-  // If AI, check the config.
+  // If human, always true. If AI, check the config.
   bool allowHighScore = (!aiMode) || (AI_SAVES_HIGH_SCORE);
 
-  // Pass 'allowHighScore' to tick (THIS WAS THE MISSING PART)
+  // Pass allowHighScore to tick
   TetrisGame::TickResult res = game.tick(now, act, allowHighScore);
 
   // --- LEVEL UP LOGIC ---
@@ -94,7 +117,7 @@ void loop() {
     Serial.print  ("   !!! LEVEL UP: "); Serial.print(game.level()); Serial.println(" !!!");
     Serial.print  ("   Score: ");        Serial.println(game.score());
     Serial.println("=============================\n");
-    
+
     display.levelUpFlash(game.level());
   }
 
@@ -102,8 +125,7 @@ void loop() {
   if (res.gameOver) {
     Serial.println("GAME OVER");
     Serial.print("Final Score: "); Serial.println(game.score());
-    
-    // NOTE: 'newHighScore' will only be true if allowHighScore was true AND they beat the score
+
     if (res.newHighScore) {
       Serial.println(">>> NEW HIGH SCORE! <<<");
       display.showNewHighScore(game.score());
@@ -113,8 +135,8 @@ void loop() {
 
     // Restart
     Serial.println("Restarting...");
-    game.reset(); 
-    display.bootFlash(); 
+    game.reset();
+    display.bootFlash();
   }
 
   if (now - lastFrameMs >= 15) {

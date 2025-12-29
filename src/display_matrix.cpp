@@ -52,12 +52,14 @@ static const uint32_t THEMES[NUM_THEMES][8] = {
   {0, 0x00E5FF, 0xFFF400, 0xFF3DF2, 0x00FF9A, 0xFF2D55, 0x6C63FF, 0xFF7A00},
 };
 
+// Border / theme animation state
 static uint8_t  g_prevLocked = 255;
 static uint16_t g_hueOld = 0;
 static uint16_t g_hueNew = 0;
 static uint32_t g_wipeStartMs = 0;
 static bool     g_firstRun = true;
 
+// Level-up fade animation state
 static bool     g_isFading = false;
 static uint32_t g_fadeStartMs = 0;
 static uint8_t  g_fadeFromLevel = 0;
@@ -78,12 +80,13 @@ static uint16_t rgbToHue(uint32_t c) {
 }
 
 static uint32_t lerpColorRGB(uint32_t c1, uint32_t c2, uint8_t step) {
-  if (step == 0) return c1; if (step == 255) return c2;
+  if (step == 0) return c1;
+  if (step == 255) return c2;
   uint8_t r1 = (uint8_t)(c1 >> 16); uint8_t g1 = (uint8_t)(c1 >> 8); uint8_t b1 = (uint8_t)c1;
   uint8_t r2 = (uint8_t)(c2 >> 16); uint8_t g2 = (uint8_t)(c2 >> 8); uint8_t b2 = (uint8_t)c2;
-  return ((uint32_t)(r1 + (((r2-r1)*step)>>8)) << 16) |
-         ((uint32_t)(g1 + (((g2-g1)*step)>>8)) << 8) |
-         (b1 + (((b2-b1)*step)>>8));
+  return ((uint32_t)(r1 + (((r2 - r1) * step) >> 8)) << 16) |
+         ((uint32_t)(g1 + (((g2 - g1) * step) >> 8)) << 8) |
+         (b1 + (((b2 - b1) * step) >> 8));
 }
 
 MatrixDisplay::MatrixDisplay() : strip_(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800) {}
@@ -120,9 +123,9 @@ void MatrixDisplay::drawChar(int16_t x, int16_t y, char c, uint32_t color) {
   if (idx == -1) return;
 
   if (idx == 10) {
-      setPixel(x+1, y+1, color);
-      setPixel(x+1, y+3, color);
-      return;
+    setPixel(x + 1, y + 1, color);
+    setPixel(x + 1, y + 3, color);
+    return;
   }
 
   for (int col = 0; col < 3; col++) {
@@ -151,98 +154,181 @@ void MatrixDisplay::drawText(int16_t x, int16_t y, const String& text, uint32_t 
   }
 }
 
-void MatrixDisplay::showTwoLineTitleValue(const String& title, const String& value,
+bool MatrixDisplay::showTwoLineTitleValue(const String& title, const String& value,
                                          uint32_t titleColor, uint32_t valueColor,
-                                         uint32_t durationMs) {
+                                         uint32_t durationMs,
+                                         AbortFn abortFn) {
   const int16_t yTitle = 1;
   const int16_t yValue = 10;
 
   const int16_t valueW = (int16_t)((int)value.length() * 4 - 1);
 
-  // Slower marquee settings
-  const uint16_t pxMs = 250; // was 140. Bigger = slower. Try 300 if you want even slower.
-  const uint8_t  gapPx = 8;  // was 4. More gap = more breathing room between repeats.
-  const int16_t  cycleW = (int16_t)(valueW + gapPx);
+  // Animation tuning
+  const uint16_t pxMs = 320;     // ms per pixel scroll speed (slower = higher number)
+  const uint8_t overshoot = 1;   // how far past the edge to go
+  const uint32_t startHoldMs = 800;  // pause before moving
+  const uint32_t edgeHoldMs  = 800;  // pause at each edge
+  const uint32_t endHoldMs   = 1200; // pause before switching
 
-  // If scrolling, ensure we show at least one full wrap so the whole value can be read.
-  uint32_t runMs = durationMs;
-  if (valueW > MATRIX_W && cycleW > 0) {
-    uint32_t minMs = (uint32_t)cycleW * (uint32_t)pxMs + 800; // one full loop + a little margin
-    if (runMs < minMs) runMs = minMs;
+  // No need to scroll if it fits
+  if (valueW <= MATRIX_W) {
+    const uint32_t startMs = millis();
+    while ((millis() - startMs) < durationMs) {
+      if (abortFn && abortFn()) return true;
+      strip_.clear();
+      drawTextCentered(title, yTitle, titleColor);
+      drawTextCentered(value, yValue, valueColor);
+      strip_.show();
+      delay(25);
+    }
+    return false;
   }
 
+  // Too wide → create back-and-forth “wiggle” scroll
+  const int16_t maxShift = valueW - MATRIX_W;
+  const int16_t leftEdge  = -(overshoot);
+  const int16_t rightEdge = maxShift + overshoot;
+
+  // Compute one full cycle time (left → right → left)
+  const uint32_t oneWayMs = (uint32_t)(rightEdge - leftEdge) * pxMs;
+  const uint32_t cycleMs = (2 * oneWayMs) + (2 * edgeHoldMs);
   const uint32_t startMs = millis();
+
+  // Ensure duration covers at least one complete cycle
+  uint32_t runMs = durationMs;
+  if (runMs < (cycleMs + startHoldMs + endHoldMs))
+    runMs = cycleMs + startHoldMs + endHoldMs;
+
   while ((millis() - startMs) < runMs) {
+    if (abortFn && abortFn()) return true;
+
+    uint32_t elapsed = millis() - startMs;
+
+    int16_t shift = 0;
+
+    if (elapsed < startHoldMs) {
+      shift = 0;  // hold start
+    } else {
+      uint32_t t = (elapsed - startHoldMs) % cycleMs;
+
+      if (t < edgeHoldMs) {
+        shift = leftEdge;  // hold left
+      } else if (t < edgeHoldMs + oneWayMs) {
+        shift = leftEdge + (int16_t)((t - edgeHoldMs) / (float)pxMs); // left→right
+      } else if (t < edgeHoldMs + oneWayMs + edgeHoldMs) {
+        shift = rightEdge; // hold right
+      } else {
+        shift = rightEdge - (int16_t)((t - edgeHoldMs - oneWayMs - edgeHoldMs) / (float)pxMs); // right→left
+      }
+    }
+
+    strip_.clear();
+    drawTextCentered(title, yTitle, titleColor);
+    drawText(-shift, yValue, value, valueColor);
+    strip_.show();
+    delay(25);
+  }
+
+  return false;
+}
+
+
+void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
+  // Single splash screen: "TET" on top, "RIS" on bottom, animated T-tetromino in the middle.
+  const uint32_t startMs = millis();
+  while ((millis() - startMs) < durationMs) {
+    if (abortFn && abortFn()) return;
+
+    uint32_t now = millis();
+
+    // Soft pulse using a triangle wave
+    uint16_t phase = (uint16_t)((now / 8) & 0x01FF); // 0..511
+    if (phase > 255) phase = (uint16_t)(511 - phase);
+    uint8_t v = (uint8_t)(60 + (phase * 170) / 255); // 60..230
+
+    uint32_t cText = strip_.Color(0, v, v); // cyan-ish
+    uint32_t cBlock = strip_.ColorHSV((uint16_t)(now * 40), 255, v);
+
     strip_.clear();
 
-    // Title (top line) - centered, no scrolling.
-    drawTextCentered(title, yTitle, titleColor);
+    drawTextCentered("TET", 1, cText);
+    drawTextCentered("RIS", 10, cText);
 
-    if (valueW <= MATRIX_W) {
-      // Value fits: centered on bottom line.
-      drawTextCentered(value, yValue, valueColor);
-    } else {
-      // Value too wide: scroll left continuously and wrap.
-      const uint32_t elapsed = millis() - startMs;
-      const int16_t offset = (int16_t)((elapsed / pxMs) % (uint32_t)cycleW);
-      const int16_t x = (int16_t)(MATRIX_W - offset);
+    // Draw a chunky T tetromino (each block is 2x2 pixels)
+    auto block2 = [&](int16_t x, int16_t y) {
+      setPixel(x + 0, y + 0, cBlock);
+      setPixel(x + 1, y + 0, cBlock);
+      setPixel(x + 0, y + 1, cBlock);
+      setPixel(x + 1, y + 1, cBlock);
+    };
 
-      drawText(x, yValue, value, valueColor);
-      drawText(x + cycleW, yValue, value, valueColor);
-    }
+    // Centered around x ~6, y ~5
+    block2(6, 4);  // top middle
+    block2(4, 6);  // bottom left
+    block2(6, 6);  // bottom middle
+    block2(8, 6);  // bottom right
+
+    // Tiny sparkle
+    setPixel(12, 7, strip_.Color(v, v, v));
 
     strip_.show();
     delay(25);
   }
 }
 
-
-// --- PAGED GAME OVER (NOW 2-LINE PAGES) ---
+// --- GAME OVER (2-line pages) ---
 void MatrixDisplay::showGameOver(uint32_t score, uint8_t level) {
   uint32_t cLevelLabel = strip_.Color(0, 0, 255);
   uint32_t cLevelVal   = strip_.Color(255, 255, 255);
   uint32_t cScoreLabel = strip_.Color(0, 255, 0);
   uint32_t cScoreVal   = strip_.Color(255, 255, 255);
 
-  // Two-line pages (much less fragmented):
-  //   top: title, bottom: value (scrolls if needed)
-  showTwoLineTitleValue("LVL", String(level), cLevelLabel, cLevelVal, 2500);
-  showTwoLineTitleValue("SCR", String(score), cScoreLabel, cScoreVal, 6500);
+  (void)showTwoLineTitleValue("LVL", String(level), cLevelLabel, cLevelVal, 3000, nullptr);
+  (void)showTwoLineTitleValue("SCR", String(score), cScoreLabel, cScoreVal, 8000, nullptr);
 
-  strip_.clear(); strip_.show(); delay(300);
+  strip_.clear(); strip_.show(); delay(250);
 }
 
 // --- NEW HIGH SCORE CELEBRATION ---
 void MatrixDisplay::showNewHighScore(uint32_t score) {
-  // 1. Rapid RGB Strobe
-  for(int i=0; i<6; i++) {
-     strip_.fill(strip_.Color(150, 0, 0)); strip_.show(); delay(40);
-     strip_.fill(strip_.Color(0, 150, 0)); strip_.show(); delay(40);
-     strip_.fill(strip_.Color(0, 0, 150)); strip_.show(); delay(40);
+  // Rapid RGB strobe
+  for (int i = 0; i < 6; i++) {
+    strip_.fill(strip_.Color(150, 0, 0)); strip_.show(); delay(40);
+    strip_.fill(strip_.Color(0, 150, 0)); strip_.show(); delay(40);
+    strip_.fill(strip_.Color(0, 0, 150)); strip_.show(); delay(40);
   }
   strip_.clear();
   strip_.show();
 
-  uint32_t cNew = strip_.Color(255, 0, 255);   // Purple
-  uint32_t cVal = strip_.Color(255, 255, 255); // White
+  uint32_t cNew = strip_.Color(255, 0, 255);    // Purple
+  uint32_t cVal = strip_.Color(255, 255, 255);  // White
 
-  // 2. Single, clean two-line screen (title above, score scrolling below).
-  showTwoLineTitleValue("NEW", String(score), cNew, cVal, 8000);
+  (void)showTwoLineTitleValue("NEW", String(score), cNew, cVal, 9000, nullptr);
 
-  strip_.clear(); strip_.show(); delay(300);
+  strip_.clear(); strip_.show(); delay(250);
 }
 
 // --- BOOT STATS ---
-void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel) {
+void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel, AbortFn abortFn) {
   uint32_t cHiLabel   = strip_.Color(255, 0, 255);
   uint32_t cHiVal     = strip_.Color(255, 255, 0);
   uint32_t cLvlLabel  = strip_.Color(0, 0, 255);
   uint32_t cLvlVal    = strip_.Color(255, 255, 255);
 
-  showTwoLineTitleValue("HI",  String(highScore), cHiLabel,  cHiVal,  5000);
-  showTwoLineTitleValue("LVL", String(highLevel), cLvlLabel, cLvlVal, 2500);
+  // Longer on each screen, plus a small gap between screens.
+  if (showTwoLineTitleValue("HI", String(highScore), cHiLabel, cHiVal, 9000, abortFn)) return;
 
-  strip_.clear(); strip_.show(); delay(300);
+  // Inter-screen pause (skippable)
+  uint32_t gapStart = millis();
+  while ((millis() - gapStart) < 900) {
+    if (abortFn && abortFn()) return;
+    delay(15);
+  }
+
+  (void)showTwoLineTitleValue("LVL", String(highLevel), cLvlLabel, cLvlVal, 4500, abortFn);
+
+  strip_.clear(); strip_.show();
+  delay(200);
 }
 
 // --- RENDER ---
@@ -261,11 +347,15 @@ void MatrixDisplay::setPixel(int16_t x, int16_t y, uint32_t c) {
 }
 
 uint32_t MatrixDisplay::rgb(uint32_t rrggbb) const {
-  uint8_t r = (rrggbb >> 16) & 0xFF; uint8_t g = (rrggbb >> 8) & 0xFF; uint8_t b = (rrggbb) & 0xFF;
+  uint8_t r = (rrggbb >> 16) & 0xFF;
+  uint8_t g = (rrggbb >> 8) & 0xFF;
+  uint8_t b = (rrggbb) & 0xFF;
   return strip_.Color(r, g, b);
 }
 
-uint8_t MatrixDisplay::themeIndex(uint8_t level) const { return (uint8_t)((level - 1) % NUM_THEMES); }
+uint8_t MatrixDisplay::themeIndex(uint8_t level) const {
+  return (uint8_t)((level - 1) % NUM_THEMES);
+}
 
 uint32_t MatrixDisplay::pieceColor(uint8_t level, uint8_t pieceId) const {
   if (pieceId > 7) pieceId = 0;
@@ -273,51 +363,66 @@ uint32_t MatrixDisplay::pieceColor(uint8_t level, uint8_t pieceId) const {
 }
 
 uint32_t MatrixDisplay::scaleColor(uint32_t c, uint8_t alpha) const {
-  uint8_t r = (uint8_t)((c >> 16) & 0xFF); uint8_t g = (uint8_t)((c >> 8) & 0xFF); uint8_t b = (uint8_t)(c & 0xFF);
-  r = (uint8_t)(((uint16_t)r * alpha) >> 8); g = (uint8_t)(((uint16_t)g * alpha) >> 8); b = (uint8_t)(((uint16_t)b * alpha) >> 8);
+  uint8_t r = (uint8_t)((c >> 16) & 0xFF);
+  uint8_t g = (uint8_t)((c >> 8) & 0xFF);
+  uint8_t b = (uint8_t)(c & 0xFF);
+  r = (uint8_t)(((uint16_t)r * alpha) >> 8);
+  g = (uint8_t)(((uint16_t)g * alpha) >> 8);
+  b = (uint8_t)(((uint16_t)b * alpha) >> 8);
   return strip_.Color(r, g, b);
 }
 
 uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const {
   uint16_t finalHue;
+
   if (g_isFading) {
     uint32_t elapsed = nowMs - g_fadeStartMs;
     if (elapsed > g_fadeDuration) elapsed = g_fadeDuration;
+
     uint32_t totalSteps = 14;
     uint32_t currentStep = (elapsed * totalSteps) / g_fadeDuration;
     if (currentStep >= totalSteps) currentStep = totalSteps - 1;
-    uint8_t cIdx = currentStep % 7; uint8_t nextCIdx = (cIdx + 1) % 7;
+
+    uint8_t cIdx = currentStep % 7;
+    uint8_t nextCIdx = (cIdx + 1) % 7;
     uint8_t tIdx = themeIndex(g_fadeToLevel);
-    uint32_t c1 = THEMES[tIdx][cIdx + 1]; uint32_t c2 = THEMES[tIdx][nextCIdx + 1];
+
+    uint32_t c1 = THEMES[tIdx][cIdx + 1];
+    uint32_t c2 = THEMES[tIdx][nextCIdx + 1];
+
     uint32_t stepDur = g_fadeDuration / totalSteps;
     uint32_t subTime = elapsed - ((currentStep * g_fadeDuration) / totalSteps);
-    uint8_t splitY = (subTime * MATRIX_H) / stepDur;
+    uint8_t splitY = (stepDur == 0) ? 0 : (uint8_t)((subTime * MATRIX_H) / stepDur);
+
     uint32_t targetC = (y < splitY) ? c2 : c1;
     finalHue = rgbToHue(targetC);
   } else {
     uint32_t duration = 600;
     uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : duration;
     uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
+
     uint16_t baseHue = (y < splitY) ? g_hueNew : g_hueOld;
     uint16_t rawScroll = (uint16_t)((x + y) * 120 - (nowMs * 30));
     finalHue = baseHue + (rawScroll >> 5);
   }
+
   bool isMeshGap = ((x ^ y) & 1);
   return strip_.ColorHSV(finalHue, 200, isMeshGap ? 40 : 140);
 }
 
 void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   strip_.clear();
+
   const uint8_t lvl = g.level();
   uint8_t tIdx = themeIndex(lvl);
   uint8_t locked = g.lastLockedPieceType();
+
   if (g_firstRun) {
     g_prevLocked = locked;
     g_hueNew = rgbToHue(THEMES[tIdx][locked + 1]) + 32768;
     g_hueOld = g_hueNew;
     g_firstRun = false;
-  }
-  else if (locked != g_prevLocked) {
+  } else if (locked != g_prevLocked) {
     g_hueOld = g_hueNew;
     g_hueNew = rgbToHue(THEMES[tIdx][locked + 1]) + 32768;
     g_wipeStartMs = nowMs;
@@ -331,6 +436,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     else fadeStep = (uint8_t)((elapsed * 255) / g_fadeDuration);
   }
 
+  // Border area
   for (uint8_t y = 0; y < MATRIX_H; y++) {
     for (uint8_t x = 0; x < MATRIX_W; x++) {
       bool inBoardX = (x >= BOARD_OFFSET_X) && (x < (BOARD_OFFSET_X + BOARD_W));
@@ -341,6 +447,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     }
   }
 
+  // Board
   auto b = g.board();
   const bool clearing = g.isClearingLines();
   const uint32_t elapsed = clearing ? g.clearingElapsedMs(nowMs) : 0;
@@ -351,36 +458,51 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     for (uint8_t bx = 0; bx < BOARD_W; bx++) {
       uint8_t id = b[by][bx];
       if (!id) continue;
+
       uint32_t c;
       if (g_isFading) c = lerpColorRGB(pieceColor(g_fadeFromLevel, id), pieceColor(g_fadeToLevel, id), fadeStep);
       else c = pieceColor(lvl, id);
 
       if (clearing && g.isClearingRow(by)) {
         uint8_t lines = g.clearingLineCount();
-        if (lines >= 4) c = strip_.ColorHSV((bx * 4000) + (nowMs * 60), 255, alpha); // Rainbow
-        else if (lines == 3) { // 3 Flash
-           if (elapsed < 80 || (elapsed >= 160 && elapsed < 240) || (elapsed >= 320 && elapsed < 400)) c = strip_.Color(255,255,255);
-           else c = scaleColor(c, alpha);
-        } else if (lines == 2) { // 2 Flash
-           if (elapsed < 80 || (elapsed >= 160 && elapsed < 240)) c = strip_.Color(255,255,255);
-           else c = scaleColor(c, alpha);
-        } else { // 1 Flash
-           if (elapsed < 60) c = strip_.Color(255, 255, 255);
-           else c = scaleColor(c, alpha);
+        if (lines >= 4) {
+          c = strip_.ColorHSV((bx * 4000) + (nowMs * 60), 255, alpha);
+        } else if (lines == 3) {
+          if (elapsed < 80 || (elapsed >= 160 && elapsed < 240) || (elapsed >= 320 && elapsed < 400))
+            c = strip_.Color(255, 255, 255);
+          else
+            c = scaleColor(c, alpha);
+        } else if (lines == 2) {
+          if (elapsed < 80 || (elapsed >= 160 && elapsed < 240))
+            c = strip_.Color(255, 255, 255);
+          else
+            c = scaleColor(c, alpha);
+        } else {
+          if (elapsed < 60)
+            c = strip_.Color(255, 255, 255);
+          else
+            c = scaleColor(c, alpha);
         }
       }
+
       setPixel(BOARD_OFFSET_X + bx, BOARD_OFFSET_Y + by, c);
     }
   }
 
+  // Active piece
   if (!g.isGameOver() && !clearing) {
-    TetrisGame::Cell cells[4]; uint8_t n = 0;
+    TetrisGame::Cell cells[4];
+    uint8_t n = 0;
     g.getCurrentPieceBlocks(cells, n);
     uint8_t id = g.currentPieceId();
+
     uint32_t c;
     if (g_isFading) c = lerpColorRGB(pieceColor(g_fadeFromLevel, id), pieceColor(g_fadeToLevel, id), fadeStep);
     else c = pieceColor(lvl, id);
-    for (uint8_t i = 0; i < n; i++) setPixel(BOARD_OFFSET_X + cells[i].x, BOARD_OFFSET_Y + cells[i].y, c);
+
+    for (uint8_t i = 0; i < n; i++) {
+      setPixel(BOARD_OFFSET_X + cells[i].x, BOARD_OFFSET_Y + cells[i].y, c);
+    }
   }
 
   if (g.isGameOver()) {
