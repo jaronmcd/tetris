@@ -89,6 +89,12 @@ static uint32_t lerpColorRGB(uint32_t c1, uint32_t c2, uint8_t step) {
          (b1 + (((b2 - b1) * step) >> 8));
 }
 
+static uint16_t hueDistance(uint16_t a, uint16_t b) {
+  uint16_t d = (a > b) ? (a - b) : (b - a);
+  if (d > 32768) d = (uint16_t)(65536 - d);
+  return d;
+}
+
 MatrixDisplay::MatrixDisplay() : strip_(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800) {}
 
 void MatrixDisplay::begin() {
@@ -410,6 +416,58 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   return strip_.ColorHSV(finalHue, 200, isMeshGap ? 40 : 140);
 }
 
+uint32_t MatrixDisplay::solidLevelBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const {
+  (void)y;
+
+  auto borderColorForLevel = [&](uint8_t level, uint8_t bx) -> uint32_t {
+    // Left border: x=0..(BOARD_OFFSET_X-1)
+    // Right border: x=(BOARD_OFFSET_X+BOARD_W)..(MATRIX_W-1)
+    // We treat the border as 3 "rings" (outer edge -> inner edge).
+    uint8_t ring = 0;
+    if (bx < BOARD_OFFSET_X) ring = bx;
+    else ring = (uint8_t)(MATRIX_W - 1 - bx);
+    if (ring > 2) ring = 2;
+
+    // Pick a base hue per level, then nudge it away from the current theme's
+    // piece hues so the border reads as a distinct, stable "level color".
+    const uint8_t tIdx = themeIndex(level);
+    uint16_t hue = (uint16_t)(8000u + (uint32_t)(level - 1) * 5200u);
+
+    for (uint8_t tries = 0; tries < 6; tries++) {
+      uint16_t minD = 65535;
+      for (uint8_t pid = 1; pid <= 7; pid++) {
+        uint16_t ph = rgbToHue(THEMES[tIdx][pid]);
+        uint16_t d = hueDistance(hue, ph);
+        if (d < minD) minD = d;
+      }
+      if (minD >= 5200) break;           // far enough from the palette
+      hue = (uint16_t)(hue + 9000u);     // rotate hue away
+    }
+
+    // Edge definition: same hue, but adjust saturation/brightness across rings.
+    // Outer edge = darker & punchier; inner edge = brighter & slightly softer.
+    uint8_t sat = 255;
+    uint8_t val = 50;
+    if (ring == 1) { sat = 220; val = 85; }
+    else if (ring == 2) { sat = 180; val = 135; }
+
+    return strip_.ColorHSV(hue, sat, val);
+  };
+
+  // During level-up fade, blend border colors between levels too.
+  if (g_isFading) {
+    uint32_t elapsed = (nowMs >= g_fadeStartMs) ? (nowMs - g_fadeStartMs) : g_fadeDuration;
+    if (elapsed > g_fadeDuration) elapsed = g_fadeDuration;
+    uint8_t fadeStep = (g_fadeDuration == 0) ? 255 : (uint8_t)((elapsed * 255u) / g_fadeDuration);
+
+    uint32_t c1 = borderColorForLevel(g_fadeFromLevel ? g_fadeFromLevel : g.level(), x);
+    uint32_t c2 = borderColorForLevel(g_fadeToLevel ? g_fadeToLevel : g.level(), x);
+    return lerpColorRGB(c1, c2, fadeStep);
+  }
+
+  return borderColorForLevel(g.level(), x);
+}
+
 void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   strip_.clear();
 
@@ -437,12 +495,14 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   }
 
   // Border area
+  const bool chasingHighScore = g.allowHighScore() && (g.score() > g.highScore());
   for (uint8_t y = 0; y < MATRIX_H; y++) {
     for (uint8_t x = 0; x < MATRIX_W; x++) {
       bool inBoardX = (x >= BOARD_OFFSET_X) && (x < (BOARD_OFFSET_X + BOARD_W));
       bool inBoardY = (y >= BOARD_OFFSET_Y) && (y < (BOARD_OFFSET_Y + BOARD_H));
       if (!inBoardX || !inBoardY) {
-        setPixel(x, y, arcadeBorderColor(g, x, y, nowMs));
+        if (chasingHighScore) setPixel(x, y, arcadeBorderColor(g, x, y, nowMs));
+        else setPixel(x, y, solidLevelBorderColor(g, x, y, nowMs));
       }
     }
   }

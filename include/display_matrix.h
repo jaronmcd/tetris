@@ -53,6 +53,7 @@ private:
                              AbortFn abortFn);
 
   uint32_t arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
+  uint32_t solidLevelBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
 
 private:
   Adafruit_NeoPixel strip_;

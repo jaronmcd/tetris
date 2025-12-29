@@ -82,6 +82,7 @@ void TetrisGame::reset() {
   clearing_ = false;
   clearCount_ = 0;
   clearStartMs_ = 0;
+  allowHighScore_ = true;
   bagIdx_ = 7;
   refillBag();
   spawnNext();
@@ -262,6 +263,11 @@ void TetrisGame::hardDrop(uint32_t nowMs, bool& levelUp) {
 // THIS IS THE CORRECT TICK FUNCTION
 TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool allowHighScore) {
   TickResult tr;
+
+  // Remember whether this run is allowed to write highscores. The display uses
+  // this to decide when to enable "chasing the record" border FX.
+  allowHighScore_ = allowHighScore;
+
   if (a.restart) {
     reset();
     return tr;

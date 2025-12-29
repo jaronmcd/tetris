@@ -44,6 +44,10 @@ public:
   uint32_t highScore() const { return highScore_; }
   uint8_t highLevel() const { return highLevel_; } 
 
+  // True when the *current* run is allowed to write highscores (e.g., human play
+  // or AI allowed by config). Display can use this for "chasing high score" FX.
+  bool allowHighScore() const { return allowHighScore_; }
+
   const uint8_t (*board() const)[BOARD_W] { return board_; }
   Piece currentPiece() const { return cur_; }
   uint8_t currentPieceId() const { return (uint8_t)(cur_.type + 1); } 
@@ -105,6 +109,8 @@ private:
   uint32_t score_ = 0;
   uint32_t highScore_ = 0; 
   uint8_t highLevel_ = 1; 
+
+  bool allowHighScore_ = true;
   
   uint16_t linesCleared_ = 0;
   uint8_t level_ = 1;
