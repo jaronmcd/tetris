@@ -51,14 +51,14 @@ void loop() {
   if (anyHumanAction(human)) {
     lastHumanMs = now;
     if (aiMode) {
-      Serial.println(">> Human Control Active"); // Added feedback for mode switch
+      Serial.println(">> Human Control Active");
       aiMode = false;
       ai.reset();
     }
   }
 
   if (!aiMode && (now - lastHumanMs) > IDLE_TO_AI_MS) {
-    Serial.println(">> AI Demo Mode Active"); // Added feedback for mode switch
+    Serial.println(">> AI Demo Mode Active");
     aiMode = true;
     ai.reset();
   }
@@ -70,22 +70,29 @@ void loop() {
 
   TetrisGame::TickResult res = game.tick(now, act);
 
-  // --- UPDATED: Pass the level to the flash function ---
+  // --- LEVEL UP LOGIC ---
   if (res.levelUp) {
-    // FIX: Print to console first
-    Serial.print("!!! LEVEL UP !!! Entering Level: ");
-    Serial.println(game.level());
+    Serial.println("\n=============================");
+    Serial.print  ("   !!! LEVEL UP: "); Serial.print(game.level()); Serial.println(" !!!");
+    Serial.print  ("   Score: ");        Serial.println(game.score());
+    Serial.println("=============================\n");
     
-    // Then trigger visual flash
+    // Trigger visual flash
     display.levelUpFlash(game.level());
   }
 
-  // Optional: Also print score/lines for debugging
-  if (res.linesCleared) {
-      Serial.print("Lines Cleared. Total Lines: ");
-      Serial.print(game.lines());
-      Serial.print(" Score: ");
-      Serial.println(game.score());
+  // --- GAME OVER LOGIC (SCROLLING TEXT) ---
+  if (res.gameOver) {
+    Serial.println("GAME OVER");
+    Serial.print("Final Score: "); Serial.println(game.score());
+    
+    // Scroll the stats on the matrix
+    display.showGameOver(game.score(), game.level());
+
+    // Restart
+    Serial.println("Restarting...");
+    game.reset(); 
+    display.bootFlash(); 
   }
 
   if (now - lastFrameMs >= 15) {

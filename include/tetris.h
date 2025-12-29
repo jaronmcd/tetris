@@ -8,6 +8,7 @@ public:
   struct TickResult {
     bool levelUp = false;
     bool linesCleared = false; 
+    bool gameOver = false; // <--- ADDED THIS
   };
 
   struct Piece {
@@ -40,7 +41,6 @@ public:
   Piece currentPiece() const { return cur_; }
   uint8_t currentPieceId() const { return (uint8_t)(cur_.type + 1); } 
 
-  // --- NEW: Command for the display to ask "what just dropped?" ---
   uint8_t lastLockedPieceType() const { return lastType_; }
 
   // Line-clear animation helpers
@@ -52,6 +52,12 @@ public:
   uint32_t clearDurationMs() const { return CLEAR_DURATION_MS; }
 
   void getCurrentPieceBlocks(Cell* out, uint8_t& count) const;
+
+  // New getters for AI
+  int8_t currentX() const { return cur_.x; }
+  int8_t currentY() const { return cur_.y; }
+  uint8_t currentRotation() const { return cur_.rot; }
+  static const uint16_t (*getShapes())[4]; // Helper for AI access
 
 private:
   static bool maskCell(uint16_t m, uint8_t r, uint8_t c);
@@ -79,7 +85,6 @@ private:
   Piece cur_;
   bool gameOver_ = false;
 
-  // --- NEW: Memory of the last dropped piece ---
   uint8_t lastType_ = 0; 
 
   // Line clear fade animation state

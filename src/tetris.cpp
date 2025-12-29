@@ -13,6 +13,11 @@ static const uint16_t SHAPES[7][4] = {
   { 0x2E00, 0x4460, 0x0E80, 0xC440 }  // L
 };
 
+// AI Helper
+const uint16_t (*TetrisGame::getShapes())[4] {
+  return SHAPES;
+}
+
 bool TetrisGame::maskCell(uint16_t m, uint8_t r, uint8_t c) {
   uint8_t bit = 15 - (r * 4 + c);
   return (m >> bit) & 1;
@@ -47,7 +52,7 @@ void TetrisGame::reset() {
   level_ = 1;
   pieceSeq_ = 0;
   gameOver_ = false;
-  lastType_ = 0; // Reset tracking
+  lastType_ = 0; 
 
   clearing_ = false;
   clearCount_ = 0;
@@ -192,9 +197,7 @@ void TetrisGame::applyLineClear(bool& levelUp) {
 }
 
 void TetrisGame::lockAndContinue(uint32_t nowMs, bool& levelUp) {
-  // --- NEW: Save the piece type to 'lastType_' before it is lost ---
   lastType_ = cur_.type;
-
   placePieceToBoard(cur_);
 
   uint8_t rows[4];
@@ -242,7 +245,12 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
     reset();
     return tr;
   }
-  if (gameOver_) return tr;
+  
+  // FIX: Report Game Over status
+  if (gameOver_) {
+      tr.gameOver = true;
+      return tr;
+  }
 
   if (clearing_) {
     if ((nowMs - clearStartMs_) >= CLEAR_DURATION_MS) {
@@ -264,6 +272,8 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   if (a.drop) {
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
+    // FIX: Check for game over immediately after drop/spawn
+    if (gameOver_) tr.gameOver = true; 
     return tr;
   }
 
@@ -272,12 +282,16 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
       lastFallMs_ = nowMs;
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
+    // FIX: Check for game over
+    if (gameOver_) tr.gameOver = true;
     return tr;
   }
 
   if ((nowMs - lastFallMs_) >= dropIntervalMs()) {
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
+    // FIX: Check for game over
+    if (gameOver_) tr.gameOver = true;
   }
 
   return tr;
