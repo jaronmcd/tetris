@@ -11,8 +11,8 @@ public:
 
   void begin();
   void bootFlash();
-  void levelUpFlash(uint8_t nextLevel); 
-  
+  void levelUpFlash(uint8_t nextLevel);
+
   // Normal Game Over (Score + Level)
   void showGameOver(uint32_t score, uint8_t level);
 
@@ -26,7 +26,10 @@ public:
 
 private:
   uint16_t XY(uint8_t x, uint8_t y) const;
-  void setPixel(uint8_t x, uint8_t y, uint32_t c);
+
+  // NOTE: int16 so we can draw off-screen (for scrolling)
+  void setPixel(int16_t x, int16_t y, uint32_t c);
+
   uint32_t rgb(uint32_t rrggbb) const;
 
   uint8_t themeIndex(uint8_t level) const;
@@ -35,6 +38,14 @@ private:
 
   void drawChar(int16_t x, int16_t y, char c, uint32_t color);
   void drawTextCentered(String text, int16_t y, uint32_t color);
+
+  // NEW: draw a string at exact x (can be negative)
+  void drawText(int16_t x, int16_t y, const String& text, uint32_t color);
+
+  // NEW: two-line screen: title top, value bottom (scrolls if too wide)
+  void showTwoLineTitleValue(const String& title, const String& value,
+                             uint32_t titleColor, uint32_t valueColor,
+                             uint32_t durationMs);
 
   uint32_t arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
 
