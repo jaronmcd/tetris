@@ -32,7 +32,7 @@ void setup() {
   input.begin();
   game.begin(); // Loads HS from memory
 
-  // --- NEW: CONFIG TOGGLE TO WIPE DATA ---
+  // CONFIG TOGGLE TO WIPE DATA
   if (RESET_SCORES_ON_BOOT) {
     game.formatStorage(); // Wipe data
   }
@@ -80,7 +80,13 @@ void loop() {
     act = ai.think(game, now);
   }
 
-  TetrisGame::TickResult res = game.tick(now, act);
+  // --- CHANGED: DETERMINE IF HIGH SCORE IS ALLOWED ---
+  // If human, always true.
+  // If AI, check the config.
+  bool allowHighScore = (!aiMode) || (AI_SAVES_HIGH_SCORE);
+
+  // Pass 'allowHighScore' to tick (THIS WAS THE MISSING PART)
+  TetrisGame::TickResult res = game.tick(now, act, allowHighScore);
 
   // --- LEVEL UP LOGIC ---
   if (res.levelUp) {
@@ -89,7 +95,6 @@ void loop() {
     Serial.print  ("   Score: ");        Serial.println(game.score());
     Serial.println("=============================\n");
     
-    // Trigger visual flash
     display.levelUpFlash(game.level());
   }
 
@@ -98,6 +103,7 @@ void loop() {
     Serial.println("GAME OVER");
     Serial.print("Final Score: "); Serial.println(game.score());
     
+    // NOTE: 'newHighScore' will only be true if allowHighScore was true AND they beat the score
     if (res.newHighScore) {
       Serial.println(">>> NEW HIGH SCORE! <<<");
       display.showNewHighScore(game.score());

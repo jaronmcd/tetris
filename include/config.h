@@ -26,7 +26,5 @@
 #define BOARD_OFFSET_Y 0
 
 
-// --- GAME CONFIG ---
-// Set this to TRUE to wipe the high score on the next boot.
-// After it boots once, set this back to FALSE and re-upload.
 #define RESET_SCORES_ON_BOOT false
+#define AI_SAVES_HIGH_SCORE true

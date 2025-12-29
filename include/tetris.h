@@ -27,13 +27,12 @@ public:
 
   void begin();
   void reset();
-  
-  // NEW: Wipes all saved data
   void formatStorage();
 
   uint32_t pieceSeq() const { return pieceSeq_; }
 
-  TickResult tick(uint32_t nowMs, const Actions& a);
+  // CHANGED: Added 'allowHighScore' parameter
+  TickResult tick(uint32_t nowMs, const Actions& a, bool allowHighScore);
 
   bool isGameOver() const { return gameOver_; }
   bool isClearingLines() const { return clearing_; }
@@ -51,7 +50,6 @@ public:
 
   uint8_t lastLockedPieceType() const { return lastType_; }
 
-  // Line-clear animation helpers
   uint8_t clearingLineCount() const { return clearCount_; }
   const uint8_t* clearingLines() const { return clearRows_; }
   bool isClearingRow(uint8_t y) const;

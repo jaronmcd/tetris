@@ -48,7 +48,6 @@ void TetrisGame::loadHighScore() {
   prefs_.end();
 }
 
-// NEW: Wipes NVS data
 void TetrisGame::formatStorage() {
   Serial.println(">>> FORMATTING HIGH SCORE STORAGE <<<");
   prefs_.begin("tetris", false); 
@@ -260,7 +259,8 @@ void TetrisGame::hardDrop(uint32_t nowMs, bool& levelUp) {
   lockAndContinue(nowMs, levelUp);
 }
 
-TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
+// THIS IS THE CORRECT TICK FUNCTION
+TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool allowHighScore) {
   TickResult tr;
   if (a.restart) {
     reset();
@@ -268,7 +268,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
   }
   
   if (gameOver_) {
-      if (saveHighScore()) tr.newHighScore = true; 
+      if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
       tr.gameOver = true;
       return tr;
   }
@@ -294,7 +294,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
     if (gameOver_) { 
-        if (saveHighScore()) tr.newHighScore = true; 
+        if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
         tr.gameOver = true; 
     } 
     return tr;
@@ -306,7 +306,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
     if (gameOver_) { 
-        if (saveHighScore()) tr.newHighScore = true; 
+        if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
         tr.gameOver = true; 
     } 
     return tr;
@@ -316,7 +316,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a) {
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
     if (gameOver_) { 
-        if (saveHighScore()) tr.newHighScore = true; 
+        if (allowHighScore && saveHighScore()) tr.newHighScore = true; 
         tr.gameOver = true; 
     } 
   }
