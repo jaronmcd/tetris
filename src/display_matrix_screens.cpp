@@ -62,16 +62,10 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
 
   if (startX < 0) startX = 0;
   if (startY < 0) startY = 0;
-  uint32_t shadow = strip_.Color(0, 0, 0);
 
   if (!twoDigits) {
-    // Subtle 1px shadow to keep thin strokes readable on bright backgrounds.
-    drawDigit5x7Scaled(d1, (int16_t)(startX + 1), (int16_t)(startY + 1), scale, shadow);
     drawDigit5x7Scaled(d1, startX, startY, scale, color);
   } else {
-    drawDigit5x7Scaled(d0, (int16_t)(startX + 1), (int16_t)(startY + 1), scale, shadow);
-    drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing + 1), (int16_t)(startY + 1), scale, shadow);
-
     drawDigit5x7Scaled(d0, startX, startY, scale, color);
     drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing), startY, scale, color);
   }
@@ -138,7 +132,7 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
 // - No score, no labels.
 // - Only show level numbers, using background color to distinguish CURRENT vs MAX.
 void MatrixDisplay::showGameOver(uint8_t level, uint8_t maxLevel) {
-  uint32_t fg = strip_.Color(180, 180, 180);
+  uint32_t fg = strip_.Color(140, 140, 140);
 
   // If the run tied the MAX level, show it with the MAX styling (no need to repeat).
   if (level >= maxLevel) {
@@ -185,12 +179,12 @@ void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
     }
 
     // Overlay the new max level as big white digits.
-    drawNumberCentered(maxLevel, 2, strip_.Color(180, 180, 180));
+    drawNumberCentered(maxLevel, 2, strip_.Color(140, 140, 140));
     strip_.show();
     delay(25);
   }
 
-  uint32_t fg = strip_.Color(180, 180, 180);
+  uint32_t fg = strip_.Color(140, 140, 140);
   uint32_t bg = dimColor(strip_.Color(170, 0, 170), 95);
   (void)showLevelNumberScreen(maxLevel, bg, fg, 2400, nullptr);
 
@@ -199,7 +193,7 @@ void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
 
 void MatrixDisplay::showBootStats(uint8_t maxLevel, AbortFn abortFn) {
   // Boot: show MAX level only (number + background). Skippable.
-  uint32_t fg = strip_.Color(180, 180, 180);
+  uint32_t fg = strip_.Color(140, 140, 140);
   uint32_t bg = dimColor(strip_.Color(170, 0, 170), 95);
 
   (void)showLevelNumberScreen(maxLevel, bg, fg, 2400, abortFn);

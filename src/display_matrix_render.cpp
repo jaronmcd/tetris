@@ -882,10 +882,10 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       const int16_t yPos = (int16_t)(startY + (int32_t)elapsedO * (int32_t)(endY - startY) / (int32_t)g_levelOverlayDuration);
 
       // Fade a bit as it travels down (but keep it punchy for readability).
-      // Fade as it travels down; keep it subtle so it blends with gameplay.
-      int a = 170 - (int)((elapsedO * 95UL) / g_levelOverlayDuration);
-      if (a < 85) a = 85;
-      if (a > 170) a = 170;
+      // Fade as it travels down; keep it very subtle so it blends with gameplay.
+      int a = 95 - (int)((elapsedO * 60UL) / g_levelOverlayDuration);
+      if (a < 35) a = 35;
+      if (a > 95) a = 95;
       const uint8_t alphaO = (uint8_t)a;
 
       int16_t x0 = (int16_t)(BOARD_OFFSET_X + (int16_t)((BOARD_W - totalW) / 2));
@@ -914,7 +914,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       };
 
       // Keep it 1-pixel and avoid any "filled" background: we only touch pixels that
-      // are part of the digit strokes (plus a tiny shadow), so it never looks like a block.
+      // are part of the digit strokes (only digit strokes), so it never looks like a block.
       auto drawDigit = [&](uint8_t digit, int16_t dx, int16_t dy, uint8_t alpha) {
         if (digit > 9) return;
         for (int col = 0; col < 5; col++) {
@@ -938,11 +938,6 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
           drawDigit(d1, (int16_t)(dx + digitW), dy, alpha);
         }
       };
-
-      // Tiny shadow (1px) to keep strokes readable without turning into a "block".
-            uint8_t shadowA = (uint8_t)max((uint8_t)10, (uint8_t)(alphaO / 6));
-      drawNumber(value, (int16_t)(x0 + 1), (int16_t)(yPos + 1), shadowA);
-
       // Main strokes
       drawNumber(value, x0, yPos, alphaO);
     }
