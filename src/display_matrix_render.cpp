@@ -54,6 +54,28 @@ static uint32_t g_waterfallDuration = 950;   // tweak for faster/slower waterfal
 static uint8_t  g_waterfallFromLevel = 1;
 static uint8_t  g_waterfallToLevel = 1;
 
+// Level change overlay (number scrolling down the playfield)
+static bool     g_levelOverlayActive = false;
+static uint32_t g_levelOverlayStartMs = 0;
+static uint32_t g_levelOverlayDuration = 1150;
+static uint8_t  g_levelOverlayValue = 1;
+
+// 5x7 thin-line digit font used for in-game overlay (columns, LSB=top row)
+static const uint8_t DIGITS_5x7[10][5] = {
+  // Each entry is 5 columns, 7 rows (bit0 = row0/top).
+  {0x3E, 0x41, 0x41, 0x41, 0x3E}, // 0
+  {0x00, 0x42, 0x7F, 0x40, 0x00}, // 1
+  {0x42, 0x61, 0x51, 0x49, 0x46}, // 2
+  {0x22, 0x41, 0x49, 0x49, 0x36}, // 3
+  {0x18, 0x14, 0x12, 0x7F, 0x10}, // 4
+  {0x27, 0x45, 0x45, 0x45, 0x39}, // 5
+  {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 6
+  {0x01, 0x71, 0x09, 0x05, 0x03}, // 7
+  {0x36, 0x49, 0x49, 0x49, 0x36}, // 8
+  {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
+};
+
+
 static uint16_t rgbToHue(uint32_t c) {
   uint8_t r = (uint8_t)(c >> 16); uint8_t g = (uint8_t)(c >> 8); uint8_t b = (uint8_t)c;
   uint8_t minVal = min(r, min(g, b)); uint8_t maxVal = max(r, max(g, b));
@@ -216,6 +238,11 @@ void MatrixDisplay::levelTransition(uint8_t fromLevel, uint8_t toLevel) {
   g_waterfallStartMs = now;
   g_waterfallFromLevel = fromLevel;
   g_waterfallToLevel = toLevel;
+
+  // In-game overlay: scroll the new level number down the playfield.
+  g_levelOverlayActive = true;
+  g_levelOverlayStartMs = now;
+  g_levelOverlayValue = toLevel;
 }
 
 void MatrixDisplay::setDebugForceHighScoreBorders(bool enable) {
@@ -828,6 +855,95 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
 
     for (uint8_t i = 0; i < n; i++) {
       setPixel(BOARD_OFFSET_X + cells[i].x, BOARD_OFFSET_Y + cells[i].y, c);
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Level overlay: scroll the NEW level number down the playfield.
+  // Drawn last (after blocks) so it remains visible even when the stack is high.
+  // We blend toward the inverse of the underlying pixel color for legibility.
+  // ------------------------------------------------------------
+  if (g_levelOverlayActive && !g.isGameOver()) {
+    uint32_t elapsedO = (nowMs >= g_levelOverlayStartMs) ? (nowMs - g_levelOverlayStartMs) : g_levelOverlayDuration;
+    if (elapsedO >= g_levelOverlayDuration) {
+      g_levelOverlayActive = false;
+    } else {
+      const uint8_t value = g_levelOverlayValue;
+
+      // Thin, higher-detail digits for the in-game level overlay.
+      // Two-digit levels fill the full 10-wide playfield; single-digit levels are centered.
+      const int digitW = 5;
+      const int digitH = 7;
+      const bool twoDigits = (value >= 10);
+      const int totalW = twoDigits ? (digitW * 2) : digitW;
+
+      const int16_t startY = (int16_t)BOARD_OFFSET_Y - digitH - 1;
+      const int16_t endY = (int16_t)BOARD_OFFSET_Y + BOARD_H;
+      const int16_t yPos = (int16_t)(startY + (int32_t)elapsedO * (int32_t)(endY - startY) / (int32_t)g_levelOverlayDuration);
+
+      // Fade a bit as it travels down (but keep it punchy for readability).
+      int a = 255 - (int)((elapsedO * 75UL) / g_levelOverlayDuration);
+      if (a < 180) a = 180;
+      if (a > 255) a = 255;
+      const uint8_t alphaO = (uint8_t)a;
+
+      int16_t x0 = (int16_t)(BOARD_OFFSET_X + (int16_t)((BOARD_W - totalW) / 2));
+      if (x0 < (int16_t)BOARD_OFFSET_X) x0 = (int16_t)BOARD_OFFSET_X;
+
+      auto blendInvertAt = [&](int16_t mx, int16_t my, uint8_t alpha) {
+        if (mx < (int16_t)BOARD_OFFSET_X || mx >= (int16_t)(BOARD_OFFSET_X + BOARD_W)) return;
+        if (my < (int16_t)BOARD_OFFSET_Y || my >= (int16_t)(BOARD_OFFSET_Y + BOARD_H)) return;
+        if (mx < 0 || mx >= (int16_t)MATRIX_W || my < 0 || my >= (int16_t)MATRIX_H) return;
+
+        uint16_t idx2 = XY((uint8_t)mx, (uint8_t)my);
+        uint32_t old = strip_.getPixelColor(idx2);
+        uint8_t r = (uint8_t)((old >> 16) & 0xFF);
+        uint8_t gch = (uint8_t)((old >> 8) & 0xFF);
+        uint8_t bch = (uint8_t)(old & 0xFF);
+
+        uint8_t ir = (uint8_t)(255 - r);
+        uint8_t ig = (uint8_t)(255 - gch);
+        uint8_t ib = (uint8_t)(255 - bch);
+
+        uint8_t nr = (uint8_t)(r + (((int)ir - (int)r) * (int)alpha) / 255);
+        uint8_t ng = (uint8_t)(gch + (((int)ig - (int)gch) * (int)alpha) / 255);
+        uint8_t nb = (uint8_t)(bch + (((int)ib - (int)bch) * (int)alpha) / 255);
+
+        strip_.setPixelColor(idx2, strip_.Color(nr, ng, nb));
+      };
+
+      // Keep it 1-pixel and avoid any "filled" background: we only touch pixels that
+      // are part of the digit strokes (plus a tiny shadow), so it never looks like a block.
+      auto drawDigit = [&](uint8_t digit, int16_t dx, int16_t dy, uint8_t alpha) {
+        if (digit > 9) return;
+        for (int col = 0; col < 5; col++) {
+          uint8_t bits = DIGITS_5x7[digit][col];
+          for (int row = 0; row < 7; row++) {
+            if ((bits >> row) & 1u) {
+              blendInvertAt((int16_t)(dx + col), (int16_t)(dy + row), alpha);
+            }
+          }
+        }
+      };
+
+      auto drawNumber = [&](uint8_t v, int16_t dx, int16_t dy, uint8_t alpha) {
+        if (v > 99) v = 99;
+        uint8_t d0 = (uint8_t)(v / 10);
+        uint8_t d1 = (uint8_t)(v % 10);
+        if (v < 10) {
+          drawDigit(d1, dx, dy, alpha);
+        } else {
+          drawDigit(d0, dx, dy, alpha);
+          drawDigit(d1, (int16_t)(dx + digitW), dy, alpha);
+        }
+      };
+
+      // Tiny shadow (1px) to keep strokes readable without turning into a "block".
+      uint8_t shadowA = (uint8_t)max((uint8_t)18, (uint8_t)(alphaO / 5));
+      drawNumber(value, (int16_t)(x0 + 1), (int16_t)(yPos + 1), shadowA);
+
+      // Main strokes
+      drawNumber(value, x0, yPos, alphaO);
     }
   }
 

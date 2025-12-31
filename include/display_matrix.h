@@ -27,9 +27,8 @@ public:
   void showBootLogo(uint32_t durationMs, AbortFn abortFn = nullptr);
 
   // Normal Game Over (Score + Level)
-  void showGameOver(uint32_t score, uint8_t level);
-
-  // Celebration for beating the max-level record
+  void showGameOver(uint8_t level, uint8_t maxLevel);
+// Celebration for beating the max-level record
   void showNewMaxLevel(uint8_t maxLevel);
 
   // Boot: shows MAX level (skippable)
@@ -54,6 +53,12 @@ private:
   void drawChar(int16_t x, int16_t y, char c, uint32_t color);
   void drawTextCentered(String text, int16_t y, uint32_t color);
   void drawText(int16_t x, int16_t y, const String& text, uint32_t color);
+
+// Minimal numeric screens (no labels / no score)
+uint32_t dimColor(uint32_t c, uint8_t alpha) const;
+void drawDigit5x7Scaled(uint8_t digit, int16_t x, int16_t y, uint8_t scale, uint32_t color);
+void drawNumberCentered(uint8_t value, uint8_t scale, uint32_t color);
+bool showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t durationMs, AbortFn abortFn);
 
   // Two-line screen: title on top, value on bottom (scrolls if needed). Returns true if aborted.
   bool showTwoLineTitleValue(const String& title, const String& value,

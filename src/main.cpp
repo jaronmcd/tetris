@@ -54,8 +54,7 @@ void setup() {
     game.formatStorage(); // Wipe data
   }
 
-  // Optional splash/logo (skippable with any input)
-  display.showBootLogo(3500, &bootAbort);
+  // Boot: keep it minimal on the tiny display (MAX level only). Skippable.
 
   // Show boot stats (also skippable)
   if (!g_bootSkipped) {
@@ -169,7 +168,7 @@ void loop() {
       display.showNewMaxLevel(game.maxLevel());
     }
 
-    display.showGameOver(game.score(), game.level());
+    display.showGameOver(game.level(), game.maxLevel());
 
     // Restart
     Serial.println("Restarting...");
