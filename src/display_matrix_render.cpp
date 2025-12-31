@@ -637,7 +637,21 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     else fadeStep = (uint8_t)((elapsed * 255) / g_fadeDuration);
   }
 
-  const bool highScoreBorders = g_debugForceHighScoreBorders || (g.allowHighScore() && (g.score() > g.highScore()));
+  // "Record chase" mode:
+  // We only show the special arcade/rainbow border during the *last 3 lines*
+  // before you would surpass your stored max level (i.e., while you're still
+  // at maxLevel, and you're 1-3 line clears away from leveling up).
+  //
+  // This keeps the border mostly "normal" and adds tension only near the
+  // breakthrough moment.
+  const uint8_t linesIntoLevel = (uint8_t)(g.lines() % 10);
+  const uint8_t linesToNextLevel = (uint8_t)(10 - linesIntoLevel); // 10..1
+
+  const bool chasingMaxLevel = (g.maxLevel() < 99) && (g.level() == g.maxLevel());
+  const bool nearBreakthrough = (linesToNextLevel <= 3);
+
+  const bool highScoreBorders = g_debugForceHighScoreBorders ||
+                               (g.hasPlayedBefore() && g.allowHighScore() && chasingMaxLevel && nearBreakthrough);
   const bool bossLevel = (!highScoreBorders) && ((lvl % 10) == 0);
   g_highScoreRainbowMode = highScoreBorders;
   g_bossLevelActive = bossLevel;

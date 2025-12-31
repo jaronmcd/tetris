@@ -53,8 +53,7 @@ void MatrixDisplay::showGameOver(uint32_t score, uint8_t level) {
   strip_.clear(); strip_.show(); delay(250);
 }
 
-
-void MatrixDisplay::showNewHighScore(uint32_t score) {
+void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
   for (int i = 0; i < 6; i++) {
     strip_.fill(strip_.Color(150, 0, 0)); strip_.show(); delay(40);
     strip_.fill(strip_.Color(0, 150, 0)); strip_.show(); delay(40);
@@ -66,27 +65,18 @@ void MatrixDisplay::showNewHighScore(uint32_t score) {
   uint32_t cNew = strip_.Color(255, 0, 255);
   uint32_t cVal = strip_.Color(255, 255, 255);
 
-  (void)showTwoLineTitleValue("NEW", String(score), cNew, cVal, 9000, nullptr);
+  // Keep it simple on the tiny display: celebrate the new MAX level.
+  (void)showTwoLineTitleValue("MAX", String(maxLevel), cNew, cVal, 9000, nullptr);
 
   strip_.clear(); strip_.show(); delay(250);
 }
 
 
-void MatrixDisplay::showBootStats(uint32_t highScore, uint8_t highLevel, AbortFn abortFn) {
-  uint32_t cHiLabel   = strip_.Color(255, 0, 255);
-  uint32_t cHiVal     = strip_.Color(255, 255, 0);
-  uint32_t cLvlLabel  = strip_.Color(0, 0, 255);
-  uint32_t cLvlVal    = strip_.Color(255, 255, 255);
+void MatrixDisplay::showBootStats(uint8_t maxLevel, AbortFn abortFn) {
+  uint32_t cMaxLabel  = strip_.Color(255, 0, 255);
+  uint32_t cMaxVal    = strip_.Color(255, 255, 255);
 
-  if (showTwoLineTitleValue("HI", String(highScore), cHiLabel, cHiVal, 9000, abortFn)) return;
-
-  uint32_t gapStart = millis();
-  while ((millis() - gapStart) < 900) {
-    if (abortFn && abortFn()) return;
-    delay(15);
-  }
-
-  (void)showTwoLineTitleValue("LVL", String(highLevel), cLvlLabel, cLvlVal, 4500, abortFn);
+  (void)showTwoLineTitleValue("MAX", String(maxLevel), cMaxLabel, cMaxVal, 5000, abortFn);
 
   strip_.clear(); strip_.show();
   delay(200);

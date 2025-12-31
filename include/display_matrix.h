@@ -29,11 +29,11 @@ public:
   // Normal Game Over (Score + Level)
   void showGameOver(uint32_t score, uint8_t level);
 
-  // Celebration for beating the record
-  void showNewHighScore(uint32_t score);
+  // Celebration for beating the max-level record
+  void showNewMaxLevel(uint8_t maxLevel);
 
-  // Boot: shows HI + score, then LVL + level (skippable)
-  void showBootStats(uint32_t highScore, uint8_t highLevel, AbortFn abortFn = nullptr);
+  // Boot: shows MAX level (skippable)
+  void showBootStats(uint8_t maxLevel, AbortFn abortFn = nullptr);
 
   void render(const TetrisGame& g, uint32_t nowMs);
 

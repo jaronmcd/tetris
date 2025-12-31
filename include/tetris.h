@@ -10,7 +10,8 @@ public:
     bool levelUp = false;
     bool linesCleared = false; 
     bool gameOver = false;
-    bool newHighScore = false;
+    // True when the run set a new "max level" record (persistent).
+    bool newMaxLevel = false;
   };
 
   struct Piece {
@@ -51,6 +52,14 @@ public:
   
   uint32_t highScore() const { return highScore_; }
   uint8_t highLevel() const { return highLevel_; } 
+
+  // The best (highest) level ever reached (persistent). This is the primary
+  // "record" for the tiny LED version.
+  uint8_t maxLevel() const { return maxLevel_; }
+
+  // True after at least one completed (non-test) game has occurred.
+  // Used to avoid "record chase" border FX during the very first run.
+  bool hasPlayedBefore() const { return hasPlayed_; }
 
   // True when the *current* run is allowed to write highscores (e.g., human play
   // or AI allowed by config). Display can use this for "chasing high score" FX.
@@ -100,6 +109,8 @@ private:
 
   void loadHighScore();
   bool saveHighScore();
+  bool saveMaxLevel();
+  bool saveHasPlayed();
 
 private:
   uint8_t board_[BOARD_H][BOARD_W] = {};
@@ -120,6 +131,10 @@ private:
   uint32_t score_ = 0;
   uint32_t highScore_ = 0; 
   uint8_t highLevel_ = 1; 
+
+  uint8_t maxLevel_ = 1;
+
+  bool hasPlayed_ = false;
 
   bool allowHighScore_ = true;
   

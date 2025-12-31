@@ -59,9 +59,8 @@ void setup() {
 
   // Show boot stats (also skippable)
   if (!g_bootSkipped) {
-    Serial.print("Booting... High Score: "); Serial.print(game.highScore());
-    Serial.print(" | High Level: "); Serial.println(game.highLevel());
-    display.showBootStats(game.highScore(), game.highLevel(), &bootAbort);
+    Serial.print("Booting... Max Level: "); Serial.println(game.maxLevel());
+    display.showBootStats(game.maxLevel(), &bootAbort);
   }
 
   // Small flush so the "skip" button doesn't also immediately move/drop on first frame.
@@ -165,12 +164,12 @@ void loop() {
     Serial.println("GAME OVER");
     Serial.print("Final Score: "); Serial.println(game.score());
 
-    if (res.newHighScore) {
-      Serial.println(">>> NEW HIGH SCORE! <<<");
-      display.showNewHighScore(game.score());
-    } else {
-      display.showGameOver(game.score(), game.level());
+    if (res.newMaxLevel) {
+      Serial.print(">>> NEW MAX LEVEL: "); Serial.print(game.maxLevel()); Serial.println(" <<<");
+      display.showNewMaxLevel(game.maxLevel());
     }
+
+    display.showGameOver(game.score(), game.level());
 
     // Restart
     Serial.println("Restarting...");

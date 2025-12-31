@@ -35,6 +35,9 @@ void TetrisGame::loadHighScore() {
   prefs_.begin("tetris", true); 
   highScore_ = prefs_.getUInt("hs", 0);
   highLevel_ = (uint8_t)prefs_.getUInt("hl", 1);
+  // New primary record for the tiny LED version: highest level ever reached.
+  maxLevel_ = (uint8_t)prefs_.getUInt("ml", 1);
+  hasPlayed_ = prefs_.getBool("pg", false);
   prefs_.end();
 }
 
@@ -45,6 +48,8 @@ void TetrisGame::formatStorage() {
   prefs_.end();
   highScore_ = 0;
   highLevel_ = 1;
+  maxLevel_ = 1;
+  hasPlayed_ = false;
 }
 
 bool TetrisGame::saveHighScore() {
@@ -57,6 +62,28 @@ bool TetrisGame::saveHighScore() {
     prefs_.putUInt("hl", (uint32_t)highLevel_);
     prefs_.end();
     return true; 
+  }
+  return false;
+}
+
+bool TetrisGame::saveMaxLevel() {
+  if (level_ > maxLevel_) {
+    maxLevel_ = level_;
+    prefs_.begin("tetris", false);
+    prefs_.putUInt("ml", (uint32_t)maxLevel_);
+    prefs_.end();
+    return true;
+  }
+  return false;
+}
+
+bool TetrisGame::saveHasPlayed() {
+  if (!hasPlayed_) {
+    hasPlayed_ = true;
+    prefs_.begin("tetris", false);
+    prefs_.putBool("pg", true);
+    prefs_.end();
+    return true;
   }
   return false;
 }
@@ -317,7 +344,12 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
   }
   
   if (gameOver_) {
-      if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
+      // Persist records only when this run is allowed to.
+      if (allowHighScore_) {
+        (void)saveHasPlayed();
+        (void)saveHighScore();
+        if (saveMaxLevel()) tr.newMaxLevel = true;
+      }
       tr.gameOver = true;
       return tr;
   }
@@ -352,7 +384,11 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
     if (gameOver_) { 
-        if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
+        if (allowHighScore_) {
+          (void)saveHasPlayed();
+          (void)saveHighScore();
+          if (saveMaxLevel()) tr.newMaxLevel = true;
+        }
         tr.gameOver = true; 
     } 
     return tr;
@@ -364,7 +400,11 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
     if (gameOver_) { 
-        if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
+        if (allowHighScore_) {
+          (void)saveHasPlayed();
+          (void)saveHighScore();
+          if (saveMaxLevel()) tr.newMaxLevel = true;
+        }
         tr.gameOver = true; 
     } 
     return tr;
@@ -374,7 +414,11 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
     if (gameOver_) { 
-        if (allowHighScore_ && saveHighScore()) tr.newHighScore = true;
+        if (allowHighScore_) {
+          (void)saveHasPlayed();
+          (void)saveHighScore();
+          if (saveMaxLevel()) tr.newMaxLevel = true;
+        }
         tr.gameOver = true; 
     } 
   }

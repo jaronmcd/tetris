@@ -18,10 +18,14 @@
 #define MATRIX_BOTTOM_UP false
 
 // ======================
-// Tetris board (10x16 centered on 16x16)
+// Tetris board
 // ======================
+// NOTE: If your physical frame/bezel clips the outermost LEDs, the bottom row
+// can get partially hidden. Setting BOARD_H to 15 reserves y=15 as a "border"
+// row so blocks never occupy the clipped pixels, effectively raising the floor
+// by 1.
 #define BOARD_W 10
-#define BOARD_H 16
+#define BOARD_H 15
 #define BOARD_OFFSET_X 3
 #define BOARD_OFFSET_Y 0
 
