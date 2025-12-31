@@ -138,7 +138,7 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
 // - No score, no labels.
 // - Only show level numbers, using background color to distinguish CURRENT vs MAX.
 void MatrixDisplay::showGameOver(uint8_t level, uint8_t maxLevel) {
-  uint32_t fg = strip_.Color(255, 255, 255);
+  uint32_t fg = strip_.Color(180, 180, 180);
 
   // If the run tied the MAX level, show it with the MAX styling (no need to repeat).
   if (level >= maxLevel) {
@@ -185,12 +185,12 @@ void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
     }
 
     // Overlay the new max level as big white digits.
-    drawNumberCentered(maxLevel, 2, strip_.Color(255, 255, 255));
+    drawNumberCentered(maxLevel, 2, strip_.Color(180, 180, 180));
     strip_.show();
     delay(25);
   }
 
-  uint32_t fg = strip_.Color(255, 255, 255);
+  uint32_t fg = strip_.Color(180, 180, 180);
   uint32_t bg = dimColor(strip_.Color(170, 0, 170), 95);
   (void)showLevelNumberScreen(maxLevel, bg, fg, 2400, nullptr);
 
@@ -199,7 +199,7 @@ void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
 
 void MatrixDisplay::showBootStats(uint8_t maxLevel, AbortFn abortFn) {
   // Boot: show MAX level only (number + background). Skippable.
-  uint32_t fg = strip_.Color(255, 255, 255);
+  uint32_t fg = strip_.Color(180, 180, 180);
   uint32_t bg = dimColor(strip_.Color(170, 0, 170), 95);
 
   (void)showLevelNumberScreen(maxLevel, bg, fg, 2400, abortFn);

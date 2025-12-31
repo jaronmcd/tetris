@@ -882,9 +882,10 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       const int16_t yPos = (int16_t)(startY + (int32_t)elapsedO * (int32_t)(endY - startY) / (int32_t)g_levelOverlayDuration);
 
       // Fade a bit as it travels down (but keep it punchy for readability).
-      int a = 255 - (int)((elapsedO * 75UL) / g_levelOverlayDuration);
-      if (a < 180) a = 180;
-      if (a > 255) a = 255;
+      // Fade as it travels down; keep it subtle so it blends with gameplay.
+      int a = 170 - (int)((elapsedO * 95UL) / g_levelOverlayDuration);
+      if (a < 85) a = 85;
+      if (a > 170) a = 170;
       const uint8_t alphaO = (uint8_t)a;
 
       int16_t x0 = (int16_t)(BOARD_OFFSET_X + (int16_t)((BOARD_W - totalW) / 2));
@@ -939,7 +940,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       };
 
       // Tiny shadow (1px) to keep strokes readable without turning into a "block".
-      uint8_t shadowA = (uint8_t)max((uint8_t)18, (uint8_t)(alphaO / 5));
+            uint8_t shadowA = (uint8_t)max((uint8_t)10, (uint8_t)(alphaO / 6));
       drawNumber(value, (int16_t)(x0 + 1), (int16_t)(yPos + 1), shadowA);
 
       // Main strokes
