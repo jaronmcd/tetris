@@ -303,7 +303,7 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
     finalHue = rgbToHue(targetC);
   } else {
     uint32_t duration = 600;
-    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : duration;
+    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : 0;
     uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
 
     uint16_t baseHue = (y < splitY) ? g_hueNew : g_hueOld;
@@ -403,7 +403,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   if (bossThisLevel) {
     style = borderStyleForLevel((uint8_t)(level + 1));
     const uint32_t duration = 600;
-    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : duration;
+    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : 0;
     uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
     hue = (by < splitY) ? g_hueNew : g_hueOld;
   }
@@ -686,7 +686,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
 
   int16_t wfFrontY = -999;
   if (g_waterfallActive) {
-    uint32_t wfElapsed = (nowMs >= g_waterfallStartMs) ? (nowMs - g_waterfallStartMs) : g_waterfallDuration;
+    uint32_t wfElapsed = (nowMs >= g_waterfallStartMs) ? (nowMs - g_waterfallStartMs) : 0;
     if (wfElapsed >= g_waterfallDuration) {
       g_waterfallActive = false;
     } else {
@@ -861,13 +861,15 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   // ------------------------------------------------------------
   // Level overlay: scroll the NEW level number down the playfield.
   // Drawn last (after blocks) so it remains visible even when the stack is high.
-  // We blend toward the inverse of the underlying pixel color for legibility.
+  // We "stencil" the number by DIMMING whatever pixels it touches.
+  // This keeps the overlay subtle and avoids looking like a solid block.
   // ------------------------------------------------------------
   if (g_levelOverlayActive && !g.isGameOver()) {
-    uint32_t elapsedO = (nowMs >= g_levelOverlayStartMs) ? (nowMs - g_levelOverlayStartMs) : g_levelOverlayDuration;
-    if (elapsedO >= g_levelOverlayDuration) {
-      g_levelOverlayActive = false;
-    } else {
+    uint32_t elapsedO = (nowMs >= g_levelOverlayStartMs) ? (nowMs - g_levelOverlayStartMs) : 0;
+    const bool doneO = (elapsedO >= g_levelOverlayDuration);
+    const uint32_t tO = doneO ? g_levelOverlayDuration : elapsedO;
+
+    {
       const uint8_t value = g_levelOverlayValue;
 
       // Thin, higher-detail digits for the in-game level overlay.
@@ -877,21 +879,27 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       const bool twoDigits = (value >= 10);
       const int totalW = twoDigits ? (digitW * 2) : digitW;
 
+      // Scroll the digit TOP from above the field to a fully-visible "bottom aligned" position.
+      // (This prevents the digit from being mostly clipped at the end, which looks like it vanishes early.)
       const int16_t startY = (int16_t)BOARD_OFFSET_Y - digitH - 1;
-      const int16_t endY = (int16_t)BOARD_OFFSET_Y + BOARD_H;
-      const int16_t yPos = (int16_t)(startY + (int32_t)elapsedO * (int32_t)(endY - startY) / (int32_t)g_levelOverlayDuration);
+      int16_t endY = (int16_t)BOARD_OFFSET_Y + (int16_t)BOARD_H - (int16_t)digitH;
+      if (endY < (int16_t)BOARD_OFFSET_Y) endY = (int16_t)BOARD_OFFSET_Y;
+
+      const int16_t yPos = (int16_t)(startY + (int32_t)tO * (int32_t)(endY - startY) / (int32_t)g_levelOverlayDuration);
 
       // Fade a bit as it travels down (but keep it punchy for readability).
-      // Fade as it travels down; keep it very subtle so it blends with gameplay.
-      int a = 95 - (int)((elapsedO * 60UL) / g_levelOverlayDuration);
-      if (a < 35) a = 35;
-      if (a > 95) a = 95;
+      // Fade as it travels down; keep it subtle but still visible.
+      int a = 160 - (int)((tO * 70UL) / g_levelOverlayDuration);
+      if (a < 90) a = 90;
+      if (a > 160) a = 160;
       const uint8_t alphaO = (uint8_t)a;
 
       int16_t x0 = (int16_t)(BOARD_OFFSET_X + (int16_t)((BOARD_W - totalW) / 2));
       if (x0 < (int16_t)BOARD_OFFSET_X) x0 = (int16_t)BOARD_OFFSET_X;
 
-      auto blendInvertAt = [&](int16_t mx, int16_t my, uint8_t alpha) {
+      // Stencil effect: if the underlying pixel is bright, dim it; if it's near-black, lift it slightly.
+// This keeps the number visible even over empty space, while still "interacting" with blocks.
+      auto stencilAt = [&](int16_t mx, int16_t my, uint8_t strength) {
         if (mx < (int16_t)BOARD_OFFSET_X || mx >= (int16_t)(BOARD_OFFSET_X + BOARD_W)) return;
         if (my < (int16_t)BOARD_OFFSET_Y || my >= (int16_t)(BOARD_OFFSET_Y + BOARD_H)) return;
         if (mx < 0 || mx >= (int16_t)MATRIX_W || my < 0 || my >= (int16_t)MATRIX_H) return;
@@ -902,18 +910,31 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
         uint8_t gch = (uint8_t)((old >> 8) & 0xFF);
         uint8_t bch = (uint8_t)(old & 0xFF);
 
-        uint8_t ir = (uint8_t)(255 - r);
-        uint8_t ig = (uint8_t)(255 - gch);
-        uint8_t ib = (uint8_t)(255 - bch);
+        uint16_t lum = (uint16_t)r + (uint16_t)gch + (uint16_t)bch;
 
-        uint8_t nr = (uint8_t)(r + (((int)ir - (int)r) * (int)alpha) / 255);
-        uint8_t ng = (uint8_t)(gch + (((int)ig - (int)gch) * (int)alpha) / 255);
-        uint8_t nb = (uint8_t)(bch + (((int)ib - (int)bch) * (int)alpha) / 255);
+        uint8_t nr, ng, nb;
+        if (lum < 80) {
+          // Background is dark/empty: lift it to a faint neutral gray so the digit is visible
+          // even over empty space, while staying subtle.
+          //
+          // strength fades with the overlay; map it to a small floor of brightness.
+          // Example: strength ~160..90 => lift ~46..32
+          const uint8_t lift = (uint8_t)(14u + (strength / 5u));
+          nr = (r   < lift) ? lift : r;
+          ng = (gch < lift) ? lift : gch;
+          nb = (bch < lift) ? lift : bch;
+        } else {
+          // Bright pixel (block): dim it so the number "cuts" into the stack.
+          uint16_t keep = (uint16_t)(255u - strength);
+          nr = (uint8_t)(((uint16_t)r * keep) / 255u);
+          ng = (uint8_t)(((uint16_t)gch * keep) / 255u);
+          nb = (uint8_t)(((uint16_t)bch * keep) / 255u);
+        }
 
         strip_.setPixelColor(idx2, strip_.Color(nr, ng, nb));
       };
 
-      // Keep it 1-pixel and avoid any "filled" background: we only touch pixels that
+// Keep it 1-pixel and avoid any "filled" background: we only touch pixels that
       // are part of the digit strokes (only digit strokes), so it never looks like a block.
       auto drawDigit = [&](uint8_t digit, int16_t dx, int16_t dy, uint8_t alpha) {
         if (digit > 9) return;
@@ -921,7 +942,8 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
           uint8_t bits = DIGITS_5x7[digit][col];
           for (int row = 0; row < 7; row++) {
             if ((bits >> row) & 1u) {
-              blendInvertAt((int16_t)(dx + col), (int16_t)(dy + row), alpha);
+              // Stencil: dim the pixels the digit touches.
+              stencilAt((int16_t)(dx + col), (int16_t)(dy + row), alpha);
             }
           }
         }
@@ -940,6 +962,11 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       };
       // Main strokes
       drawNumber(value, x0, yPos, alphaO);
+    }
+
+    // Turn the overlay off only AFTER we have rendered the final frame (bottom aligned).
+    if (doneO) {
+      g_levelOverlayActive = false;
     }
   }
 
