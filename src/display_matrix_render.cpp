@@ -898,7 +898,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
       if (x0 < (int16_t)BOARD_OFFSET_X) x0 = (int16_t)BOARD_OFFSET_X;
 
       // Stencil effect: if the underlying pixel is bright, dim it; if it's near-black, lift it slightly.
-// This keeps the number visible even over empty space, while still "interacting" with blocks.
+      // This keeps the number visible even over empty space, while still "interacting" with blocks.
       auto stencilAt = [&](int16_t mx, int16_t my, uint8_t strength) {
         if (mx < (int16_t)BOARD_OFFSET_X || mx >= (int16_t)(BOARD_OFFSET_X + BOARD_W)) return;
         if (my < (int16_t)BOARD_OFFSET_Y || my >= (int16_t)(BOARD_OFFSET_Y + BOARD_H)) return;
@@ -917,8 +917,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
           // Background is dark/empty: lift it to a faint neutral gray so the digit is visible
           // even over empty space, while staying subtle.
           //
-          // strength fades with the overlay; map it to a small floor of brightness.
-          // Example: strength ~160..90 => lift ~46..32
+          // Map strength to a small floor of brightness.
           const uint8_t lift = (uint8_t)(14u + (strength / 5u));
           nr = (r   < lift) ? lift : r;
           ng = (gch < lift) ? lift : gch;
