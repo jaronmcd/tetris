@@ -116,7 +116,7 @@ static constexpr uint8_t NUM_BORDER_STYLES = 4;
 
 // Border animation changes every 10 levels:
 //  1-10: Classic (current look)
-// 11-20: Comet scan
+// 11-20: Checkerboard contrast
 // 21-30: Sparkle twinkle
 // 31-40: Wavy pulse
 static inline uint8_t borderStyleForLevel(uint8_t level) {
@@ -456,66 +456,31 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
 
   // Animation style changes every 10 levels. First 10 levels keep the "classic" look.
   if (style == 1) {
-    // STYLE 1 (11-20): "Corner Drift Glow" — subtle, clearly different from Classic.
-    //
-    // Instead of a sweep, we softly bias brightness toward a corner that slowly
-    // (and pseudo-randomly) changes over time, with a smooth crossfade.
-    const uint32_t segMs = 7000; // how long each corner "holds" before drifting
-    const uint32_t seg = (segMs ? (nowMs / segMs) : 0);
-    const uint32_t segT = (segMs ? (nowMs % segMs) : 0);
-    const uint8_t mix = (segMs ? (uint8_t)((segT * 255UL) / segMs) : 0);
+    // STYLE 1 (11-20): "Checkerboard Contrast" — alternating tiles brighten/dim.
+    // Uses 2x2 tiles for a clear pattern on low resolution, with a slow phase flip.
+    const uint8_t phase = (uint8_t)((nowMs / 1200UL) & 1UL); // ~1.2s invert
+    const bool on = ((((bx >> 1) ^ (by >> 1) ^ phase) & 1u) == 0u);
 
-    // Pick two corners for this segment and the next (deterministic "random")
-    const uint8_t cornerA = (uint8_t)(hash8(seg * 53u + (uint32_t)level * 17u) & 3u);
-    const uint8_t cornerB = (uint8_t)(hash8((seg + 1u) * 53u + (uint32_t)level * 17u) & 3u);
+    if (on) {
+      int vv = (int)val + ((ring == 0) ? 52 : (ring == 1) ? 32 : 12);
+      if (vv > vMax) vv = vMax;
+      val = (uint8_t)vv;
 
-    auto glowForCorner = [&](uint8_t c) -> uint8_t {
-      // Corners: 0=TL, 1=TR, 2=BR, 3=BL
-      const bool top  = (c == 0 || c == 1);
-      const bool left = (c == 0 || c == 3);
+      if (ring != 2) {
+        int ss = (int)sat + ((ring == 0) ? 18 : 12);
+        if (ss > 255) ss = 255;
+        sat = (uint8_t)ss;
+      }
+    } else {
+      int vv = (int)val - ((ring == 0) ? 42 : (ring == 1) ? 26 : 10);
+      if (vv < vMin) vv = vMin;
+      val = (uint8_t)vv;
 
-      const uint8_t dx = left ? bx : (uint8_t)(MATRIX_W - 1 - bx);
-      const uint8_t dy = top  ? by : (uint8_t)(MATRIX_H - 1 - by);
+      if (ring == 0) sat = (uint8_t)(((uint16_t)sat * 165u) / 255u);
+      else if (ring == 1) sat = (uint8_t)(((uint16_t)sat * 190u) / 255u);
 
-      // Manhattan distance from the corner (0 at the corner)
-      const uint8_t dist = (uint8_t)(dx + dy);
-
-      // Convert to strength 0..255 with a soft falloff.
-      // Max possible dist in 16x16 is 30.
-      const uint8_t maxDist = (uint8_t)((MATRIX_W - 1) + (MATRIX_H - 1));
-      int s = (int)maxDist - (int)dist;
-      if (s < 0) s = 0;
-
-      uint16_t strength = (uint16_t)((uint32_t)s * 255UL / (uint32_t)maxDist);
-
-      // Ease (square) for a nicer gradient
-      strength = (uint16_t)((strength * strength) >> 8);
-      return (uint8_t)strength;
-    };
-
-    const uint8_t gA = glowForCorner(cornerA);
-    const uint8_t gB = glowForCorner(cornerB);
-    const uint8_t g  = (uint8_t)((((uint16_t)gA * (uint16_t)(255 - mix)) + ((uint16_t)gB * (uint16_t)mix)) >> 8);
-
-    // Apply as a gentle bias: outer ring shows it most, inner ring least.
-    const uint8_t amp = (ring == 0) ? 58 : (ring == 1) ? 26 : 10;
-    int boost = (int)((uint16_t)g * amp / 255);
-
-    int vv = (int)val + boost;
-    if (vv > 210) vv = 210;
-    val = (uint8_t)vv;
-
-    // Tiny hue nudge so the drift reads as a "mode change" without being loud.
-    if (!mutedFirstLevel && ring != 2) {
-      const uint16_t hueWobble = (uint16_t)((uint32_t)g * 900UL / 255UL); // 0..~900
-      hue2 = (uint16_t)(hue2 + hueWobble);
-    }
-
-    // Optional: a very small "pin" highlight right at the active corner (outer ring only).
-    if (ring == 0 && g > 220) {
-      int v2 = (int)val + 18;
-      if (v2 > 225) v2 = 225;
-      val = (uint8_t)v2;
+      if (ring == 0) hue2 = (uint16_t)(hue2 + 12000u);
+      else if (ring == 1) hue2 = (uint16_t)(hue2 + 8000u);
     }
   } else if (style == 2) {
     // STYLE 2 (21-30): "Sparkle twinkle" — occasional white glints that pop.
