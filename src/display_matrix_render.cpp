@@ -26,7 +26,6 @@ static bool     g_focusActive = false;
 static int16_t  g_focusX = -1;        // matrix coordinates (0..MATRIX_W-1)
 static int16_t  g_focusY = -1;        // matrix coordinates (0..MATRIX_H-1)
 static uint8_t  g_focusStrength = 0;  // 0..255
-static uint8_t  g_focusPieceId = 0;   // 1..7 (current falling piece), for border color influence
 
 // Tuning knobs (border reaction)
 static constexpr int     FOCUS_RADIUS = 9;           // pixels (matrix space)
@@ -529,9 +528,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
     }
   }
 
-  uint8_t focusColorBlend = 0;
-
-  // Reactive "sphere of light" around the falling piece.
+    // Reactive "sphere of light" around the falling piece.
   // Border pixels near the active piece get a gentle brightness lift, slight desaturation,
   // and a tiny hue nudge (so it reads as interactive, but stays subtle).
   if (g_focusActive && g_focusStrength) {
@@ -562,15 +559,6 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
         int dir = (dx >= 0) ? 1 : -1;
         int dh = dir * ((int)inten * (int)FOCUS_HUE_SHIFT_MAX) / 255;
         hue2 = (uint16_t)(hue2 + dh);
-      }
-
-      // After decade 2 (levels 21+), let the falling piece strongly tint nearby border pixels.
-      // This makes the border feel more responsive and color-linked to gameplay.
-      if (!mutedFirstLevel && level >= 21 && g_focusPieceId) {
-        const uint8_t maxBlend = (ring == 0) ? 180 : (ring == 1) ? 130 : 60;
-        uint16_t cb = (uint16_t)(((uint32_t)inten * (uint32_t)maxBlend) / 255UL); // 0..maxBlend
-        if (cb > 255) cb = 255;
-        focusColorBlend = (uint8_t)cb;
       }
     }
   }
@@ -606,12 +594,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
     }
   }
 
-  uint32_t out = strip_.ColorHSV(hue2, sat, val);
-  if (focusColorBlend && g_focusPieceId && !mutedFirstLevel) {
-    uint32_t pc = pieceColor(level, g_focusPieceId);
-    out = lerpColorRGB(out, pc, focusColorBlend);
-  }
-  return out;
+  return strip_.ColorHSV(hue2, sat, val);
 }
 
 
@@ -718,7 +701,6 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   g_focusStrength = 0;
   g_focusX = -1;
   g_focusY = -1;
-  g_focusPieceId = 0;
 
   if (!g.isGameOver() && !clearing) {
     TetrisGame::Cell fcells[4];
@@ -739,7 +721,6 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
 
       g_focusActive = true;
       g_focusStrength = 255;
-      g_focusPieceId = g.currentPieceId();
     }
   }
 

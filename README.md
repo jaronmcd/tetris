@@ -62,6 +62,38 @@ pio run -e esp32-s3-4mb -t upload -t monitor
 
 ---
 
+## One-click web flashing (GitHub Pages)
+
+This repo includes a GitHub Actions workflow that builds the ESP32 firmware and publishes a simple "Flash this" webpage (using ESP Web Tools / Web Serial).
+
+### Enable it in your GitHub repo
+
+1. **Repo Settings → Pages → Build and deployment → Source: "GitHub Actions"**
+2. Push to `main` (or run the workflow manually under the Actions tab).
+3. Your flasher will be available at:
+
+   `https://<YOUR_GITHUB_USERNAME>.github.io/<YOUR_REPO>/`
+
+### Flash a board
+
+1. Connect the ESP32-S3 over USB (use a data-capable cable).
+2. Open the link above in **Chrome** or **Edge**.
+3. Click **Install** and select the serial device when prompted.
+
+### Local (no GitHub)
+
+After you build with PlatformIO, you can generate the same web flasher site locally:
+
+```bash
+pio run -e esp32-s3-4mb
+python scripts/ci/build_webflash_site.py --env esp32-s3-4mb --out site
+python -m http.server --directory site 8000
+```
+
+Then browse to `http://localhost:8000`.
+
+---
+
 ## Controls
 
 ### Bluetooth gamepad (Bluepad32)
