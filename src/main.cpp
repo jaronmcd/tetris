@@ -30,7 +30,6 @@ static bool g_bootSkipped = false;
 
 // Called frequently during boot screens. Returns true to abort/skip.
 static bool bootAbort() {
-  display.tickUsbPowerBrightness(millis());
   input.update();
   Actions a = input.readActions();
   if (anyHumanAction(a)) {
@@ -41,13 +40,22 @@ static bool bootAbort() {
 }
 
 void setup() {
-  // Initialize the matrix ASAP to prevent a bright/random frame on power-up.
+  Serial.begin(115200);
+  delay(30);
+
   display.begin();
 
-  Serial.begin(115200);
-  delay(50);
+  // Boot title: big scrolling text (skippable)
+  #if INTRO_ENABLED && INTRO_MARQUEE_ENABLED
+  display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
+  #endif
 
-  display.bootFlash(); // RGB Flash
+  // Boot intro: rapid falling pieces that fill the matrix (skippable)
+  #if INTRO_ENABLED
+  display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+  #endif
+
+display.bootFlash(); // RGB Flash
 
   input.begin();
   game.begin(); // Loads HS from memory
@@ -59,13 +67,7 @@ void setup() {
 
   // Boot: keep it minimal on the tiny display (MAX level only). Skippable.
 
-  // Show boot stats (also skippable)
-  if (!g_bootSkipped) {
-    Serial.print("Booting... Max Level: "); Serial.println(game.maxLevel());
-    display.showBootStats(game.maxLevel(), &bootAbort);
-  }
-
-  // Small flush so the "skip" button doesn't also immediately move/drop on first frame.
+  // Show boot stats (also skippable)// Small flush so the "skip" button doesn't also immediately move/drop on first frame.
   for (int i = 0; i < 4; i++) {
     input.update();
     input.readActions();
@@ -87,7 +89,7 @@ void loop() {
   input.update();
 
   uint32_t now = millis();
-  display.tickUsbPowerBrightness(now);
+  display.tickPowerBrightness(now);
   Actions human = input.readActions();
 
   if (human.aiProfileSet >= 0) {

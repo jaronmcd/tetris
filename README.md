@@ -16,9 +16,7 @@ A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPi
 - ESP32‑S3 DevKit (project defaults to `esp32-s3-devkitc-1`)
 - 16×16 NeoPixel / WS2812(B) matrix (256 LEDs)
 - 5V power supply sized for your matrix
-  - Recommended: a dedicated 5V USB charger (2A+) plus proper power injection / wiring.
-  - Firmware auto brightness: when enumerated by a USB host (PC/hub) it stays dim (default `USB_BRIGHTNESS_WHEN_HOST=15`). When powered by a USB charger (no enumeration), it switches to full brightness (`BRIGHTNESS`, default 95) after a short delay (see `USB_BRIGHTNESS_*` in `include/config.h`).
-  - If you plug into a PC using a power-only cable (no data lines), the device cannot detect the host and may switch to full brightness; use a normal data cable for PC development.
+  - Even with the default low brightness, *don’t* power the matrix from the dev board’s USB.
 - Common ground between ESP32 and LED matrix
 
 ### Wiring (default)
@@ -108,11 +106,7 @@ Useful settings:
 
 - `LED_PIN` – data pin for the matrix (default: **GPIO 1**)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
-- `BRIGHTNESS` – brightness when powered from a USB charger / adequate supply (default: **95**)
-- `USB_BRIGHTNESS_AUTO_ENABLED` – enable power-aware brightness selection (default: **true**)
-- `USB_BRIGHTNESS_WHEN_HOST` – brightness when enumerated by a USB host (PC/hub) (default: **15**)
-- `USB_BRIGHTNESS_CHARGER_DELAY_MS
-- USB_BRIGHTNESS_USE_SERIAL_OPEN_FALLBACK: keep dim if the USB-CDC serial port is opened (useful on some stacks where host mount detection is unreliable).` – delay before assuming a USB charger and switching to `BRIGHTNESS` (default: **2500**)
+- `BRIGHTNESS` – global brightness (default: **14**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
 - `BOARD_OFFSET_X`, `BOARD_OFFSET_Y` – where the 10×16 Tetris board sits inside the matrix
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot
