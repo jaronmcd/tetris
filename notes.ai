@@ -1,0 +1,53 @@
+notes.ai — running assistant notes (user-managed)
+====================================================
+
+ASSISTANT REMINDER
+------------------
+This file exists to preserve continuity across chats. Append concise project decisions, key requirements,
+and “latest artifact” pointers here whenever meaningful progress is made, so the user can re-upload/paste
+notes.ai in a new chat and we can resume without losing context.
+
+How to use
+----------
+- This file is meant to be kept in your repo (project root) and re-uploaded/pasted into a new chat
+  if you want continuity.
+- I will append concise, factual notes here when we make decisions/changes, so we can recover context
+  if the chat truncates.
+- Format: dated entries + actionable details (no hidden reasoning).
+
+Project
+-------
+- Tetris NeoPixel matrix firmware (PlatformIO + Arduino on ESP32-S3 DevKitC-1).
+- Key user requirement: brightness behavior differs by power source.
+
+Key requirement (brightness)
+----------------------------
+- Desired:
+  - USB charger / adapter: BRIGHTNESS = 95
+  - PC USB port: BRIGHTNESS = 15 (to reduce current draw / glare)
+- Observation:
+  - Enumeration-only detection was unreliable in user's setup (still went bright).
+  - Serial-port-open trigger behaved acceptably: when programming/monitoring begins, it dims.
+
+Latest approach (as of 2026-01-20)
+-------------------------------
+- Use USB-CDC Serial open as the "PC present" signal.
+  - Default brightness: 95.
+  - If Serial becomes true (CDC opened by PlatformIO monitor/upload tooling), set brightness to 15.
+  - Optional latch: keep 15 until reboot (default ON in v8).
+- Rationale:
+  - Avoid MCU/USB-stack specific hooks (TinyUSB mount, USB.h) per user request.
+  - Aligns with observed workflow: starting programming causes dimming.
+
+Artifacts
+---------
+- Latest zip produced in chat: "tetris-main-serial-dim-v8.zip" (serial-trigger brightness).
+
+Open questions / next checks
+----------------------------
+- If user wants "always dim on PC even without monitor/programming", serial-open trigger won't catch it.
+  Options would require:
+  - USB enumeration/config detection (MCU/stack-specific), or
+  - hardware power sensing (VBUS current, negotiation, etc.), or
+  - user-controlled mode (button/setting).
+
