@@ -17,6 +17,7 @@ A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPi
 - 16×16 NeoPixel / WS2812(B) matrix (256 LEDs)
 - 5V power supply sized for your matrix
   - Even with the default low brightness, *don’t* power the matrix from the dev board’s USB.
+  - Dev convenience: when a PC opens the USB serial port right after boot, the firmware will start at a lower "USB dev" brightness (see `USB_DEV_*` in `include/config.h`).
 - Common ground between ESP32 and LED matrix
 
 ### Wiring (default)
@@ -107,6 +108,9 @@ Useful settings:
 - `LED_PIN` – data pin for the matrix (default: **GPIO 1**)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
 - `BRIGHTNESS` – global brightness (default: **14**)
+- `USB_DEV_SAFE_BRIGHTNESS_ENABLED` – if **true**, start at a lower brightness when the device is connected to a PC for development (USB-CDC serial opened shortly after boot)
+- `USB_DEV_SAFE_BRIGHTNESS` – brightness used in that USB dev mode (default: **6**)
+- `USB_DEV_DETECT_WINDOW_MS` – how long to wait at boot for the PC to open the USB serial port (default: **1500 ms**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
 - `BOARD_OFFSET_X`, `BOARD_OFFSET_Y` – where the 10×16 Tetris board sits inside the matrix
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot
