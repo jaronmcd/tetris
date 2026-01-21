@@ -11,7 +11,20 @@
 #define NUM_LEDS (MATRIX_W * MATRIX_H)
 
 // Global brightness (this is already bright on a 16x16)
-#define BRIGHTNESS 14
+#define BRIGHTNESS 95
+
+// ======================
+// Development safety (USB-connected)
+// ======================
+// When connected to a PC over native USB (USB-CDC), optionally start at a
+// lower brightness to reduce current draw / glare during development.
+//
+// Detection: if a USB-CDC host opens the serial port during the first
+// USB_DEV_DETECT_WINDOW_MS after boot, we treat that as "dev on PC" and
+// start at USB_DEV_SAFE_BRIGHTNESS.
+#define USB_DEV_SAFE_BRIGHTNESS_ENABLED true
+#define USB_DEV_SAFE_BRIGHTNESS 6
+#define USB_DEV_DETECT_WINDOW_MS 1500
 
 // Wiring layout
 #define SERPENTINE true

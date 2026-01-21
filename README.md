@@ -17,6 +17,7 @@ A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPi
 - 16×16 NeoPixel / WS2812(B) matrix (256 LEDs)
 - 5V power supply sized for your matrix
   - Even with the default low brightness, *don’t* power the matrix from the dev board’s USB.
+  - Dev convenience: when a PC opens the USB serial port right after boot, the firmware will start at a lower "USB dev" brightness (see `USB_DEV_*` in `include/config.h`).
 - Common ground between ESP32 and LED matrix
 
 ### Wiring (default)
@@ -59,38 +60,6 @@ Or in one shot:
 ```bash
 pio run -e esp32-s3-4mb -t upload -t monitor
 ```
-
----
-
-## One-click web flashing (GitHub Pages)
-
-This repo includes a GitHub Actions workflow that builds the ESP32 firmware and publishes a simple "Flash this" webpage (using ESP Web Tools / Web Serial).
-
-### Enable it in your GitHub repo
-
-1. **Repo Settings → Pages → Build and deployment → Source: "GitHub Actions"**
-2. Push to `main` (or run the workflow manually under the Actions tab).
-3. Your flasher will be available at:
-
-   `https://<YOUR_GITHUB_USERNAME>.github.io/<YOUR_REPO>/`
-
-### Flash a board
-
-1. Connect the ESP32-S3 over USB (use a data-capable cable).
-2. Open the link above in **Chrome** or **Edge**.
-3. Click **Install** and select the serial device when prompted.
-
-### Local (no GitHub)
-
-After you build with PlatformIO, you can generate the same web flasher site locally:
-
-```bash
-pio run -e esp32-s3-4mb
-python scripts/ci/build_webflash_site.py --env esp32-s3-4mb --out site
-python -m http.server --directory site 8000
-```
-
-Then browse to `http://localhost:8000`.
 
 ---
 
@@ -139,6 +108,9 @@ Useful settings:
 - `LED_PIN` – data pin for the matrix (default: **GPIO 1**)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
 - `BRIGHTNESS` – global brightness (default: **14**)
+- `USB_DEV_SAFE_BRIGHTNESS_ENABLED` – if **true**, start at a lower brightness when the device is connected to a PC for development (USB-CDC serial opened shortly after boot)
+- `USB_DEV_SAFE_BRIGHTNESS` – brightness used in that USB dev mode (default: **6**)
+- `USB_DEV_DETECT_WINDOW_MS` – how long to wait at boot for the PC to open the USB serial port (default: **1500 ms**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
 - `BOARD_OFFSET_X`, `BOARD_OFFSET_Y` – where the 10×16 Tetris board sits inside the matrix
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot

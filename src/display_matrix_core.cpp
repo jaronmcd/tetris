@@ -5,9 +5,29 @@
 MatrixDisplay::MatrixDisplay() : strip_(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800) {}
 
 
+
+static uint8_t chooseStartupBrightness() {
+#if USB_DEV_SAFE_BRIGHTNESS_ENABLED && (defined(ARDUINO_USB_CDC_ON_BOOT) || defined(ARDUINO_USB_MODE))
+  const uint32_t t0 = millis();
+  while ((millis() - t0) < (uint32_t)USB_DEV_DETECT_WINDOW_MS) {
+    // On native USB-CDC, bool(Serial) becomes true when the host opens the port.
+    if (Serial) return (uint8_t)USB_DEV_SAFE_BRIGHTNESS;
+    delay(25);
+  }
+#endif
+  return (uint8_t)BRIGHTNESS;
+}
+
 void MatrixDisplay::begin() {
   strip_.begin();
-  strip_.setBrightness(BRIGHTNESS);
+  const uint8_t b = chooseStartupBrightness();
+  strip_.setBrightness(b);
+  #if USB_DEV_SAFE_BRIGHTNESS_ENABLED && (defined(ARDUINO_USB_CDC_ON_BOOT) || defined(ARDUINO_USB_MODE))
+  if (b == (uint8_t)USB_DEV_SAFE_BRIGHTNESS && Serial) {
+    Serial.print("USB dev detected; brightness set to ");
+    Serial.println(b);
+  }
+  #endif
   strip_.clear();
   strip_.show();
 }
