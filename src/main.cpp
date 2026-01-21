@@ -30,6 +30,7 @@ static bool g_bootSkipped = false;
 
 // Called frequently during boot screens. Returns true to abort/skip.
 static bool bootAbort() {
+  display.tickUsbPowerBrightness(millis());
   input.update();
   Actions a = input.readActions();
   if (anyHumanAction(a)) {
@@ -40,10 +41,12 @@ static bool bootAbort() {
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(200);
-
+  // Initialize the matrix ASAP to prevent a bright/random frame on power-up.
   display.begin();
+
+  Serial.begin(115200);
+  delay(50);
+
   display.bootFlash(); // RGB Flash
 
   input.begin();
@@ -84,6 +87,7 @@ void loop() {
   input.update();
 
   uint32_t now = millis();
+  display.tickUsbPowerBrightness(now);
   Actions human = input.readActions();
 
   if (human.aiProfileSet >= 0) {
