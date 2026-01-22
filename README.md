@@ -2,7 +2,7 @@
 
 A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPixel/WS2812 matrix**.
 
-- **10×16** playfield centered on a 16×16 matrix
+- **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
 - **Bluetooth gamepad support** via **Bluepad32** (D‑pad + buttons)
 - **Idle → AI demo mode** (kicks in after a few seconds with no input)
 - Persistent **High Score** + **High Level** stored in ESP32 **NVS/Preferences**
@@ -106,9 +106,12 @@ Useful settings:
 
 - `LED_PIN` – data pin for the matrix (default: **GPIO 1**)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
-- `BRIGHTNESS` – global brightness (default: **14**)
+- `BRIGHTNESS` – global brightness (default: **95**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
 - `BOARD_OFFSET_X`, `BOARD_OFFSET_Y` – where the 10×16 Tetris board sits inside the matrix
+- `LEVEL_NUMBER_DROPDOWN_ENABLED` – show/hide the in-game level number “drop-down” overlay during level transitions
+- `MILESTONE_BORDER_REVEAL_ENABLED` – border-only celebration when entering a new 10-level border style (levels 11/21/31/...)
+- `MILESTONE_BORDER_REVEAL_MS` – duration (ms) of the milestone border reveal animation
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot
 - `AI_SAVES_HIGH_SCORE` – allow demo AI to write new records
 

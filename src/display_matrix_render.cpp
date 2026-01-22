@@ -61,6 +61,14 @@ static uint32_t g_levelOverlayStartMs = 0;
 static uint32_t g_levelOverlayDuration = 1150;
 static uint8_t  g_levelOverlayValue = 1;
 
+// "Decade" milestone border reveal (border-only celebration when entering a new
+// 10-level border style: levels 11/21/31/...)
+static bool     g_milestoneBorderActive = false;
+static uint32_t g_milestoneBorderStartMs = 0;
+static uint32_t g_milestoneBorderDuration = MILESTONE_BORDER_REVEAL_MS;
+static uint8_t  g_milestoneFromLevel = 1;
+static uint8_t  g_milestoneToLevel = 1;
+
 // 5x7 thin-line digit font used for in-game overlay (columns, LSB=top row)
 static const uint8_t DIGITS_5x7[10][5] = {
   // Each entry is 5 columns, 7 rows (bit0 = row0/top).
@@ -152,7 +160,56 @@ static inline uint16_t isqrt32(uint32_t x) {
   return (uint16_t)res;
 }
 
+// Map any border pixel to a 1D index along a U-shaped path that hugs the
+// playfield (left side -> bottom -> right side). Used for milestone reveals.
+// Returns -1 for playfield pixels.
+static inline int16_t milestoneBorderIndex(uint8_t x, uint8_t y) {
+  // Border is everything NOT in the playfield (BOARD_OFFSET_X..+W-1, BOARD_OFFSET_Y..+H-1).
+  const bool inBoardX = (x >= BOARD_OFFSET_X) && (x < (BOARD_OFFSET_X + BOARD_W));
+  const bool inBoardY = (y >= BOARD_OFFSET_Y) && (y < (BOARD_OFFSET_Y + BOARD_H));
+  if (inBoardX && inBoardY) return -1;
 
+  // Bottom row adjacent to playfield.
+  const uint8_t bottomY = (uint8_t)(BOARD_OFFSET_Y + BOARD_H);
+  if (y == bottomY) {
+    // Bottom segment: x spans the playfield width.
+    if (x >= BOARD_OFFSET_X && x < (BOARD_OFFSET_X + BOARD_W)) {
+      return (int16_t)(MATRIX_H + (x - BOARD_OFFSET_X)); // 16..25
+    }
+    // Left / right bottom corners clamp to the nearest endpoint.
+    if (x < BOARD_OFFSET_X) return (int16_t)(MATRIX_H - 1);              // 15
+    return (int16_t)(MATRIX_H + BOARD_W);                                // 26
+  }
+
+  // Left side: any of the left border columns map to the left leg.
+  if (x < BOARD_OFFSET_X) {
+    return (int16_t)y; // 0..15
+  }
+
+  // Right side: any of the right border columns map to the right leg (descending).
+  if (x >= (BOARD_OFFSET_X + BOARD_W)) {
+    return (int16_t)(MATRIX_H + BOARD_W + ((MATRIX_H - 1) - y)); // 26..41
+  }
+
+  // Top gap (where BOARD_OFFSET_Y==0, there is no top border across the playfield).
+  return -1;
+}
+
+static inline uint8_t milestoneDepth(uint8_t x) {
+  // 0 = inner edge of the playfield border (closest to pieces)
+  // 1/2 = farther out; we attenuate brightness so the celebration stays subtle.
+  if (x < BOARD_OFFSET_X) {
+    uint8_t d = (uint8_t)((BOARD_OFFSET_X - 1) - x); // x=2->0, x=1->1, x=0->2
+    if (d > 2) d = 2;
+    return d;
+  }
+  if (x >= (BOARD_OFFSET_X + BOARD_W)) {
+    uint8_t d = (uint8_t)(x - (BOARD_OFFSET_X + BOARD_W)); // x=13->0,14->1,15->2
+    if (d > 2) d = 2;
+    return d;
+  }
+  return 0;
+}
 
 // Pick a border hue for each level that:
 // 1) Is strongly contrasting from the previous level border hue
@@ -240,10 +297,26 @@ void MatrixDisplay::levelTransition(uint8_t fromLevel, uint8_t toLevel) {
   g_waterfallFromLevel = fromLevel;
   g_waterfallToLevel = toLevel;
 
-  // In-game overlay: scroll the new level number down the playfield.
-  g_levelOverlayActive = true;
-  g_levelOverlayStartMs = now;
-  g_levelOverlayValue = toLevel;
+  // "Decade" milestone: when entering a new 10-level border style (11/21/31/...)
+  // run an additional border-only reveal/chase so the new theme reads clearly
+  // without touching the playfield.
+  if (MILESTONE_BORDER_REVEAL_ENABLED && toLevel > 1 && ((toLevel % 10) == 1)) {
+    g_milestoneBorderActive = true;
+    g_milestoneBorderStartMs = now;
+    g_milestoneFromLevel = fromLevel;
+    g_milestoneToLevel = toLevel;
+  } else {
+    g_milestoneBorderActive = false;
+  }
+
+  // In-game overlay (optional): scroll the new level number down the playfield.
+  if (LEVEL_NUMBER_DROPDOWN_ENABLED) {
+    g_levelOverlayActive = true;
+    g_levelOverlayStartMs = now;
+    g_levelOverlayValue = toLevel;
+  } else {
+    g_levelOverlayActive = false;
+  }
 }
 
 void MatrixDisplay::setDebugForceHighScoreBorders(bool enable) {
@@ -702,6 +775,77 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
           }
         }
 
+        // ------------------------------------------------------------
+        // Decade milestone border reveal (levels 11/21/31/...)
+        // Border-only celebration: a short palette chase that hugs the
+        // playfield border, so it reads as a "new theme" without interfering
+        // with piece readability.
+        // ------------------------------------------------------------
+        if (!highScoreBorders && g_milestoneBorderActive) {
+          uint32_t msElapsed = (nowMs >= g_milestoneBorderStartMs) ? (nowMs - g_milestoneBorderStartMs) : 0;
+          if (msElapsed >= g_milestoneBorderDuration) {
+            g_milestoneBorderActive = false;
+          } else {
+            const int16_t idx = milestoneBorderIndex(x, y);
+            if (idx >= 0) {
+              const int16_t pathLen = (int16_t)(MATRIX_H + BOARD_W + MATRIX_H); // 42 on 16x16 + 10-wide board
+              int16_t head = (int16_t)((msElapsed * (uint32_t)(pathLen - 1)) / g_milestoneBorderDuration);
+              if (head < 0) head = 0;
+              if (head > (pathLen - 1)) head = (int16_t)(pathLen - 1);
+
+              // Tail intensity (only behind the head, so it feels like a reveal).
+              const int16_t tail = 10;
+              int16_t d = (int16_t)(head - idx);
+              uint8_t a = 0;
+              if (d >= 0 && d <= tail) {
+                uint16_t aa = (uint16_t)(255u - (uint32_t)d * 255u / (uint32_t)tail);
+                // Keep this subtle: cap at ~190.
+                aa = (uint16_t)((aa * 190u) / 255u);
+                a = (uint8_t)aa;
+              } else if (idx == (int16_t)(head + 1)) {
+                // Tiny leading sparkle.
+                a = 40;
+              }
+
+              // Attenuate for farther-out border columns so it doesn't pull focus.
+              const uint8_t depth = milestoneDepth(x);
+              if (depth == 1) a = (uint8_t)(((uint16_t)a * 175u) / 255u);
+              else if (depth == 2) a = (uint8_t)(((uint16_t)a * 125u) / 255u);
+
+              if (a) {
+                // Build an accent that represents the *new* theme:
+                // - Primary: new border hue (very readable as a "theme" change)
+                // - Secondary: new piece palette color (adds richness without touching the playfield)
+                const uint16_t bh = pickBorderHueForLevel(g_milestoneToLevel);
+                const uint32_t borderAccent = strip_.ColorHSV(bh, 255, 255);
+                const uint8_t pid = (uint8_t)(1 + ((uint8_t)(idx / 2) % 7));
+                const uint32_t pieceAccent = pieceColor(g_milestoneToLevel, pid);
+                uint32_t accent = lerpColorRGB(borderAccent, pieceAccent, 120);
+
+                if (idx == head) {
+                  accent = lerpColorRGB(accent, strip_.Color(255, 255, 255), 70);
+                }
+
+                bc = lerpColorRGB(bc, accent, a);
+              }
+
+              // Quick corner wink at the start (border-only, minimal distraction).
+              if (msElapsed < 260) {
+                const bool on = (((msElapsed / 65u) & 1u) == 0u);
+                if (on) {
+                  const uint8_t lx = (uint8_t)(BOARD_OFFSET_X - 1);
+                  const uint8_t rx = (uint8_t)(BOARD_OFFSET_X + BOARD_W);
+                  const uint8_t byy = (uint8_t)(BOARD_OFFSET_Y + BOARD_H);
+                  const bool corner = ((x == lx || x == rx) && (y == 0 || y == byy));
+                  if (corner) {
+                    bc = lerpColorRGB(bc, strip_.Color(255, 255, 255), 180);
+                  }
+                }
+              }
+            }
+          }
+        }
+
         setPixel(x, y, bc);
       }
     }
@@ -848,7 +992,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   // We "stencil" the number by DIMMING whatever pixels it touches.
   // This keeps the overlay subtle and avoids looking like a solid block.
   // ------------------------------------------------------------
-  if (g_levelOverlayActive && !g.isGameOver()) {
+  if (LEVEL_NUMBER_DROPDOWN_ENABLED && g_levelOverlayActive && !g.isGameOver()) {
     uint32_t elapsedO = (nowMs >= g_levelOverlayStartMs) ? (nowMs - g_levelOverlayStartMs) : 0;
     const bool doneO = (elapsedO >= g_levelOverlayDuration);
     const uint32_t tO = doneO ? g_levelOverlayDuration : elapsedO;

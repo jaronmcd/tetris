@@ -25,3 +25,11 @@ notes.ai — running assistant notes (user-managed)
 
 2026-01-20
 - v12b: Fix build: remove duplicate config.h defines (fade macros, etc.) and repair main.cpp preprocessor gating (remove stray #endif) for BOOT_STATS_ENABLED.
+
+2026-01-21
+- v13: Made the in-game "level number drop-down" overlay optional via LEVEL_NUMBER_DROPDOWN_ENABLED (default false).
+
+2026-01-21
+- v14: Added a border-only "decade milestone" reveal animation when entering levels 11/21/31/... (new 10-level border style).
+  - Short palette chase hugs the playfield border + quick corner wink; does not touch playfield pixels.
+  - Config: MILESTONE_BORDER_REVEAL_ENABLED (default true), MILESTONE_BORDER_REVEAL_MS (default 1400).

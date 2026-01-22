@@ -61,6 +61,25 @@
 // Boot stats (MAX level screen)
 #define BOOT_STATS_ENABLED false
 
+// ======================
+// In-game UI
+// ======================
+// Show the new level number as a subtle "drop-down" overlay that scrolls down the
+// playfield during a level transition.
+//
+// Default: OFF (cleaner playfield; less visual interruption).
+#define LEVEL_NUMBER_DROPDOWN_ENABLED false
+
+// "Decade" milestone (levels 11/21/31/...) border celebration.
+//
+// Goal: make crossing into a new 10-level border style feel special *without*
+// adding any visual clutter inside the playfield.
+//
+// Default: ON (border-only effect; short duration).
+#define MILESTONE_BORDER_REVEAL_ENABLED true
+// Duration (ms) of the milestone border reveal animation.
+#define MILESTONE_BORDER_REVEAL_MS 1400
+
 
 // ======================
 // USB power / dev safety
