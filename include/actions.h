@@ -32,6 +32,7 @@ struct Actions {
   // 3 = game over (forced non-record, always shows both screens)
   // 4 = game over (forced tie/record style)
   // 5 = new MAX level celebration
+  // 6 = MAX chase progress preview (cycles attempts fill)
   uint8_t previewScreen = 0;
 
 };

@@ -78,11 +78,13 @@ Actions InputManager::readSerial() {
     //   p = game over (forced non-record)
     //   t = game over (forced tie/record style)
     //   m = new MAX level celebration
+    //   g = MAX chase progress preview (cycles fill/colors)
     else if (ch == 'b' || ch == 'B') a.previewScreen = 1;
     else if (ch == 'o' || ch == 'O') a.previewScreen = 2;
     else if (ch == 'p' || ch == 'P') a.previewScreen = 3;
     else if (ch == 't' || ch == 'T') a.previewScreen = 4;
     else if (ch == 'm' || ch == 'M') a.previewScreen = 5;
+    else if (ch == 'g' || ch == 'G') a.previewScreen = 6;
   }
   return a;
 }

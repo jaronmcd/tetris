@@ -16,6 +16,9 @@ static uint32_t lastFrameMs = 0;
 // Debug: force \"high score\" border mode (serial key: h)
 static bool debugForceHighScoreBorders = false;
 
+// Debug: preview MAX-level chase progress fill (serial key: g)
+static uint16_t debugPreviewMaxChaseAttempts = 0;
+
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
 static bool aiMode = true;
@@ -87,7 +90,9 @@ display.bootFlash(); // RGB Flash
   Serial.println("  o       = preview game over (live: current+max)");
   Serial.println("  p       = preview game over (forced non-record)");
   Serial.println("  t       = preview game over (forced tie/record)");
-  Serial.println("  m       = preview new MAX level celebration\n");
+  Serial.println("  m       = preview new MAX level celebration");
+  Serial.println("  g       = preview MAX chase progress (cycles fill/colors)");
+  Serial.println();
 }
 
 void loop() {
@@ -121,7 +126,7 @@ void loop() {
         Serial.print(">> DEBUG PREVIEW: Boot stats (MAX level = ");
         Serial.print(ml);
         Serial.println(")");
-        display.showBootStats(ml, nullptr);
+        display.showBootStats(ml, game.maxLevelChaseAttempts(), nullptr);
       } break;
 
       case 2: {
@@ -130,7 +135,7 @@ void loop() {
         Serial.print(", max=");
         Serial.print(ml);
         Serial.println(")");
-        display.showGameOver(lvl, ml);
+        display.showGameOver(lvl, ml, game.maxLevelChaseAttempts());
       } break;
 
       case 3: {
@@ -142,14 +147,14 @@ void loop() {
         Serial.print(", max=");
         Serial.print(maxShown);
         Serial.println(")");
-        display.showGameOver(levelShown, maxShown);
+        display.showGameOver(levelShown, maxShown, game.maxLevelChaseAttempts());
       } break;
 
       case 4: {
         Serial.print(">> DEBUG PREVIEW: Game over (forced tie/record, level=max=");
         Serial.print(ml);
         Serial.println(")");
-        display.showGameOver(ml, ml);
+        display.showGameOver(ml, ml, game.maxLevelChaseAttempts());
       } break;
 
       case 5: {
@@ -158,6 +163,34 @@ void loop() {
         Serial.print(show);
         Serial.println(")");
         display.showNewMaxLevel(show);
+      } break;
+
+      case 6: {
+        uint16_t steps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
+        if (steps < 1) steps = 1;
+
+        // Cycle through multiple full fills so you can preview the "infinite color" behavior.
+        // Range: 0 .. (steps * PREVIEW_CYCLES), inclusive.
+        const uint32_t PREVIEW_CYCLES = 6u;
+        uint32_t range = (uint32_t)steps * PREVIEW_CYCLES;
+        if (range > 65535u) range = (uint32_t)steps; // safety (debug var is uint16_t)
+
+        debugPreviewMaxChaseAttempts = (uint16_t)((debugPreviewMaxChaseAttempts + 1u) % (range + 1u));
+
+        uint32_t cycle = (uint32_t)debugPreviewMaxChaseAttempts / (uint32_t)steps;
+        uint16_t inCycle = (uint16_t)(debugPreviewMaxChaseAttempts % steps);
+
+        Serial.print(">> DEBUG PREVIEW: MAX chase progress attempts=");
+        Serial.print(debugPreviewMaxChaseAttempts);
+        Serial.print("  (cycle=");
+        Serial.print(cycle);
+        Serial.print(", inCycle=");
+        Serial.print(inCycle);
+        Serial.print("/");
+        Serial.print(steps);
+        Serial.println(")");
+
+        display.showBootStats(game.maxLevel(), debugPreviewMaxChaseAttempts, nullptr);
       } break;
     }
 
@@ -249,7 +282,7 @@ void loop() {
       display.showNewMaxLevel(game.maxLevel());
     }
 
-    display.showGameOver(game.level(), game.maxLevel());
+    display.showGameOver(game.level(), game.maxLevel(), game.maxLevelChaseAttempts());
 
     // Restart
     Serial.println("Restarting...");

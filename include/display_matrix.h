@@ -38,12 +38,12 @@ public:
   void showBootLogo(uint32_t durationMs, AbortFn abortFn = nullptr);
 
   // Normal Game Over (Score + Level)
-  void showGameOver(uint8_t level, uint8_t maxLevel);
+  void showGameOver(uint8_t level, uint8_t maxLevel, uint16_t maxChaseAttempts);
 // Celebration for beating the max-level record
   void showNewMaxLevel(uint8_t maxLevel);
 
   // Boot: shows MAX level (skippable)
-  void showBootStats(uint8_t maxLevel, AbortFn abortFn = nullptr);
+  void showBootStats(uint8_t maxLevel, uint16_t maxChaseAttempts, AbortFn abortFn = nullptr);
 
   void render(const TetrisGame& g, uint32_t nowMs);
 
@@ -70,6 +70,16 @@ uint32_t dimColor(uint32_t c, uint8_t alpha) const;
 void drawDigit5x7Scaled(uint8_t digit, int16_t x, int16_t y, uint8_t scale, uint32_t color);
 void drawNumberCentered(uint8_t value, uint8_t scale, uint32_t color);
 bool showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t durationMs, AbortFn abortFn);
+
+// MAX-level screens can optionally show a "record chase" progress meter in the
+// background based on the persistent attempt counter.
+void fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts);
+bool showMaxLevelNumberScreen(uint8_t value,
+                              uint32_t baseBg, uint32_t chaseBg,
+                              uint16_t maxChaseAttempts,
+                              uint32_t fg,
+                              uint32_t durationMs,
+                              AbortFn abortFn);
 
   // Two-line screen: title on top, value on bottom (scrolls if needed). Returns true if aborted.
   bool showTwoLineTitleValue(const String& title, const String& value,
