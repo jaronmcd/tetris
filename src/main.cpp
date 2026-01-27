@@ -19,6 +19,9 @@ static bool debugForceHighScoreBorders = false;
 // Debug: preview MAX-level chase progress fill (serial key: g)
 static uint16_t debugPreviewMaxChaseAttempts = 0;
 
+// AI smartness ladder (auto-set from MAX chase cycles)
+static uint8_t lastAutoAiSkill = 255;
+
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
 static bool aiMode = true;
@@ -105,6 +108,36 @@ void loop() {
   if (human.aiProfileSet >= 0) {
     ai.setProfile((uint8_t)human.aiProfileSet);
     human.aiProfileSet = -1;
+  }
+
+
+  // Auto-tune AI "smartness" based on MAX chase attempt cycles.
+  // This is separate from the AI speed profile (0..3). The profile controls
+  // how fast the AI presses buttons; the smartness ladder controls how good
+  // its placements are.
+  uint8_t targetSkill = (uint8_t)AI_SMARTNESS_BASE;
+  uint32_t chaseCycle = 0;
+#if AI_SMARTNESS_FROM_MAX_CHASE_ENABLED && MAX_LEVEL_CHASE_PROGRESS_ENABLED
+  uint16_t steps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
+  if (steps == 0) steps = 1;
+  uint16_t attempts = game.maxLevelChaseAttempts();
+  chaseCycle = (uint32_t)(attempts / steps);
+  uint32_t s = (uint32_t)AI_SMARTNESS_BASE + chaseCycle;
+  if (s > (uint32_t)AI_SMARTNESS_MAX) s = (uint32_t)AI_SMARTNESS_MAX;
+  targetSkill = (uint8_t)s;
+#endif
+  if (targetSkill != lastAutoAiSkill) {
+    lastAutoAiSkill = targetSkill;
+    ai.setSkill(targetSkill);
+    Serial.print(">> AI smartness level = ");
+    Serial.print(targetSkill);
+#if AI_SMARTNESS_FROM_MAX_CHASE_ENABLED && MAX_LEVEL_CHASE_PROGRESS_ENABLED
+    Serial.print(" (max-chase cycle=");
+    Serial.print(chaseCycle);
+    Serial.println(")");
+#else
+    Serial.println();
+#endif
   }
 
   if (human.toggleHighScoreBorders) {

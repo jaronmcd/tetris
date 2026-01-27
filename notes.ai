@@ -41,3 +41,10 @@ notes.ai — running assistant notes (user-managed)
 - Updated MAX chase progress background to cycle through an effectively infinite set of colors:
   - Each time attempts reach MAX_LEVEL_CHASE_PROGRESS_STEPS, the background advances to a new hue.
   - Further attempts continue filling toward the next hue (no saturation to one color forever).
+
+2026-01-26
+- v16+: Added AI "smartness" ladder tied to MAX-level chase background cycles:
+  - Each completed MAX chase fill cycle (full background color) increments AI decision quality.
+  - Implemented as an AI skill level (0..AI_SMARTNESS_MAX) separate from AI speed profile.
+  - Higher skill adds extra board features (row/col transitions, wells, landing-height) and at skill>=3 adds 1-ply lookahead using peekNextPieceType().
+  - New config knobs: AI_SMARTNESS_FROM_MAX_CHASE_ENABLED / AI_SMARTNESS_BASE / AI_SMARTNESS_MAX.

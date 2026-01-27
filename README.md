@@ -124,6 +124,12 @@ Useful settings:
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot
 - `AI_SAVES_HIGH_SCORE` – allow demo AI to write new records
 
+AI smartness ladder (tied to MAX chase progress):
+
+- `AI_SMARTNESS_FROM_MAX_CHASE_ENABLED` – if true, every time the MAX chase progress hits a *full* background color, the AI increases its decision quality
+- `AI_SMARTNESS_BASE` – starting skill level (1 = current baseline; 0 is intentionally a little sloppy for testing)
+- `AI_SMARTNESS_MAX` – max skill level (keeps MCU CPU usage predictable)
+
 Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
 - `ml` = MAX level ever reached (primary record for the tiny LED UI)

@@ -9,6 +9,10 @@ public:
   void setProfile(uint8_t p);
   uint8_t profile() const { return profile_; }
 
+  // 0..AI_SMARTNESS_MAX (see config.h). Higher => better placement search.
+  void setSkill(uint8_t s);
+  uint8_t skill() const { return skill_; }
+
   void reset();
   Actions think(const TetrisGame& g, uint32_t nowMs);
 
@@ -33,6 +37,7 @@ private:
 
 private:
   uint8_t profile_ = 1;
+  uint8_t skill_ = (uint8_t)AI_SMARTNESS_BASE;
 
   uint32_t lastPieceSeq_ = 0;
 
