@@ -33,3 +33,11 @@ notes.ai — running assistant notes (user-managed)
 - v14: Added a border-only "decade milestone" reveal animation when entering levels 11/21/31/... (new 10-level border style).
   - Short palette chase hugs the playfield border + quick corner wink; does not touch playfield pixels.
   - Config: MILESTONE_BORDER_REVEAL_ENABLED (default true), MILESTONE_BORDER_REVEAL_MS (default 1400).
+
+2026-01-27
+- Added serial debug preview keys for high score / end-of-run screens (b/o/p/t/m) plus MAX chase progress preview key (g).
+- Fixed NEW MAX celebration number clipping for 10+ by auto-fitting digit scale in drawNumberCentered().
+- Added persistent MAX-level chase attempts counter (Preferences key 'ma') and progress-bar style background on MAX screens.
+- Updated MAX chase progress background to cycle through an effectively infinite set of colors:
+  - Each time attempts reach MAX_LEVEL_CHASE_PROGRESS_STEPS, the background advances to a new hue.
+  - Further attempts continue filling toward the next hue (no saturation to one color forever).

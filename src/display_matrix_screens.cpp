@@ -51,10 +51,23 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
   uint8_t d1 = (uint8_t)(value % 10);
   const bool twoDigits = (value >= 10);
 
-  const int digitW = 5 * scale;
-  const int digitH = 7 * scale;
-  const int spacing = scale; // 1*scale spacing
+  // Auto-fit the requested scale to the physical matrix.
+  // On a 16x16 display, 5x7 digits at scale=2 fit for 1-digit values,
+  // but 2-digit values would clip. This keeps the "NEW MAX" / party
+  // overlay readable for 10+.
+  uint8_t s = (scale < 1) ? 1 : scale;
+  while (s > 1) {
+    const int digitW = 5 * s;
+    const int digitH = 7 * s;
+    const int spacing = s; // 1*scale spacing
+    const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
+    if (totalW <= MATRIX_W && digitH <= MATRIX_H) break;
+    s--;
+  }
 
+  const int digitW = 5 * s;
+  const int digitH = 7 * s;
+  const int spacing = s; // 1*scale spacing
   const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
 
   int16_t startX = (int16_t)((MATRIX_W - totalW) / 2);
@@ -64,10 +77,10 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
   if (startY < 0) startY = 0;
 
   if (!twoDigits) {
-    drawDigit5x7Scaled(d1, startX, startY, scale, color);
+    drawDigit5x7Scaled(d1, startX, startY, s, color);
   } else {
-    drawDigit5x7Scaled(d0, startX, startY, scale, color);
-    drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing), startY, scale, color);
+    drawDigit5x7Scaled(d0, startX, startY, s, color);
+    drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing), startY, s, color);
   }
 
 }
@@ -80,6 +93,83 @@ bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t f
     if (abortFn && abortFn()) return true;
 
     strip_.fill(bg);
+    drawNumberCentered(value, scale, fg);
+    strip_.show();
+    delay(25);
+  }
+  return false;
+}
+
+void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts) {
+#if MAX_LEVEL_CHASE_PROGRESS_ENABLED
+  uint16_t steps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
+  if (steps < 1) steps = 1;
+
+  // "Attempts to beat MAX" background that never caps:
+  // - The meter fills over `steps` attempts.
+  // - When the meter hits full (attempts % steps == 0), the *entire* background becomes the new color.
+  // - Further attempts start a new fill cycle, using a new (cycled) color.
+  //
+  // This makes the record screen act like a persistent "chase history" indicator
+  // rather than saturating to one color forever.
+  const uint32_t cycle = (uint32_t)maxChaseAttempts / (uint32_t)steps;   // how many full fills completed
+  const uint16_t inCycle = (uint16_t)(maxChaseAttempts % steps);          // progress within current fill
+
+  // Color selection:
+  // - cycle 0 background uses the provided baseBg (purple).
+  // - cycle 1 background uses the provided chaseBg (teal) to preserve the original look.
+  // - cycle 2+ backgrounds use a HSV hue sweep (golden-angle step) to avoid repetition.
+  auto cycleColor = [&](uint32_t idx) -> uint32_t {
+    if (idx == 0) return baseBg;
+    if (idx == 1) return chaseBg;
+
+    // Golden-angle hue step gives a well-distributed "infinite" palette.
+    // (16-bit hue wraps naturally.)
+    const uint16_t hue = (uint16_t)(idx * 0x9E37u);
+
+    // Match the existing MAX screen dimness (the base/chase colors are already dimmed by callers).
+    return dimColor(strip_.ColorHSV(hue, 255, 255), 95);
+  };
+
+  const uint32_t bgBase = cycleColor(cycle);
+  const uint32_t bgFill = cycleColor(cycle + 1u);
+
+  strip_.fill(bgBase);
+
+  // Exactly on a cycle boundary: background is already the "new color".
+  if (inCycle == 0) return;
+
+  // Fill bottom rows like a progress bar. Use ceiling so attempt 1 is visible.
+  uint32_t filled = ((uint32_t)inCycle * (uint32_t)MATRIX_H + (uint32_t)steps - 1u) / (uint32_t)steps;
+  if (filled > MATRIX_H) filled = MATRIX_H;
+
+  for (int16_t y = (int16_t)MATRIX_H - 1; y >= 0; y--) {
+    uint16_t rowFromBottom = (uint16_t)((MATRIX_H - 1) - (uint16_t)y);
+    if (rowFromBottom >= filled) break;
+    for (uint8_t x = 0; x < MATRIX_W; x++) {
+      setPixel((int16_t)x, y, bgFill);
+    }
+  }
+#else
+  (void)chaseBg;
+  (void)maxChaseAttempts;
+  strip_.fill(baseBg);
+#endif
+}
+
+bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
+                                             uint32_t baseBg, uint32_t chaseBg,
+                                             uint16_t maxChaseAttempts,
+                                             uint32_t fg,
+                                             uint32_t durationMs,
+                                             AbortFn abortFn) {
+  const uint8_t scale = 1;
+  const uint32_t start = millis();
+
+  while ((millis() - start) < durationMs) {
+    if (abortFn && abortFn()) return true;
+
+    fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts);
     drawNumberCentered(value, scale, fg);
     strip_.show();
     delay(25);
@@ -131,13 +221,15 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
 // Super-clean tiny UI:
 // - No score, no labels.
 // - Only show level numbers, using background color to distinguish CURRENT vs MAX.
-void MatrixDisplay::showGameOver(uint8_t level, uint8_t maxLevel) {
+void MatrixDisplay::showGameOver(uint8_t level, uint8_t maxLevel, uint16_t maxChaseAttempts) {
   uint32_t fg = strip_.Color(140, 140, 140);
+  // Base MAX background (purple) + the "chase" fill color.
+  uint32_t bgMaxBase = dimColor(strip_.Color(170, 0, 170), 95);
+  uint32_t bgMaxChase = dimColor(strip_.Color(0, 160, 160), 95);
 
   // If the run tied the MAX level, show it with the MAX styling (no need to repeat).
   if (level >= maxLevel) {
-    uint32_t bgMax = dimColor(strip_.Color(170, 0, 170), 95);
-    (void)showLevelNumberScreen(level, bgMax, fg, 2200, nullptr);
+    (void)showMaxLevelNumberScreen(level, bgMaxBase, bgMaxChase, maxChaseAttempts, fg, 2200, nullptr);
     strip_.clear(); strip_.show(); delay(120);
     return;
   }
@@ -148,8 +240,7 @@ void MatrixDisplay::showGameOver(uint8_t level, uint8_t maxLevel) {
   (void)showLevelNumberScreen(level, bgCur, fg, 1400, nullptr);
 
   // MAX level achieved (persistent)
-  uint32_t bgMax = dimColor(strip_.Color(170, 0, 170), 95);
-  (void)showLevelNumberScreen(maxLevel, bgMax, fg, 2000, nullptr);
+  (void)showMaxLevelNumberScreen(maxLevel, bgMaxBase, bgMaxChase, maxChaseAttempts, fg, 2000, nullptr);
 
   strip_.clear(); strip_.show(); delay(120);
 }
@@ -191,12 +282,13 @@ void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
   strip_.clear(); strip_.show(); delay(120);
 }
 
-void MatrixDisplay::showBootStats(uint8_t maxLevel, AbortFn abortFn) {
+void MatrixDisplay::showBootStats(uint8_t maxLevel, uint16_t maxChaseAttempts, AbortFn abortFn) {
   // Boot: show MAX level only (number + background). Skippable.
   uint32_t fg = strip_.Color(140, 140, 140);
-  uint32_t bg = dimColor(strip_.Color(170, 0, 170), 95);
+  uint32_t bgMaxBase = dimColor(strip_.Color(170, 0, 170), 95);
+  uint32_t bgMaxChase = dimColor(strip_.Color(0, 160, 160), 95);
 
-  (void)showLevelNumberScreen(maxLevel, bg, fg, 2400, abortFn);
+  (void)showMaxLevelNumberScreen(maxLevel, bgMaxBase, bgMaxChase, maxChaseAttempts, fg, 2400, abortFn);
 
   strip_.clear(); strip_.show();
   delay(120);

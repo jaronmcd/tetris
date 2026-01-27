@@ -37,6 +37,8 @@ void TetrisGame::loadHighScore() {
   highLevel_ = (uint8_t)prefs_.getUInt("hl", 1);
   // New primary record for the tiny LED version: highest level ever reached.
   maxLevel_ = (uint8_t)prefs_.getUInt("ml", 1);
+  // Attempts since the current max-level record was set.
+  maxLevelChaseAttempts_ = (uint16_t)prefs_.getUInt("ma", 0);
   hasPlayed_ = prefs_.getBool("pg", false);
   prefs_.end();
 }
@@ -49,6 +51,7 @@ void TetrisGame::formatStorage() {
   highScore_ = 0;
   highLevel_ = 1;
   maxLevel_ = 1;
+  maxLevelChaseAttempts_ = 0;
   hasPlayed_ = false;
 }
 
@@ -86,6 +89,13 @@ bool TetrisGame::saveHasPlayed() {
     return true;
   }
   return false;
+}
+
+bool TetrisGame::saveMaxLevelChaseAttempts() {
+  prefs_.begin("tetris", false);
+  prefs_.putUInt("ma", (uint32_t)maxLevelChaseAttempts_);
+  prefs_.end();
+  return true;
 }
 
 void TetrisGame::reset() {
@@ -259,6 +269,17 @@ void TetrisGame::debugSetLevel(uint32_t nowMs, uint8_t level) {
   // Reset fall timer so you don't get an immediate surprise drop.
   lastFallMs_ = nowMs;
 }
+
+void TetrisGame::debugResyncTimers(uint32_t nowMs) {
+  // Used when the main loop runs a blocking preview screen (delays).
+  // Keep the game from "fast-forwarding" when control returns.
+  lastFallMs_ = nowMs;
+  if (clearing_) {
+    // Keep any in-progress line-clear FX from immediately completing.
+    clearStartMs_ = nowMs;
+  }
+}
+
 void TetrisGame::applyLineClear(bool& levelUp) {
   uint8_t newBoard[BOARD_H][BOARD_W];
   memset(newBoard, 0, sizeof(newBoard));
@@ -334,6 +355,29 @@ void TetrisGame::hardDrop(uint32_t nowMs, bool& levelUp) {
 TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool allowHighScore) {
   TickResult tr;
 
+  auto persistRecordsOnGameOver = [&]() {
+    // Persist records only when this run is allowed to.
+    if (!allowHighScore_) return false;
+
+    (void)saveHasPlayed();
+    (void)saveHighScore();
+
+    bool newMax = saveMaxLevel();
+    if (newMax) {
+      // New record -> reset chase attempts.
+      maxLevelChaseAttempts_ = 0;
+      (void)saveMaxLevelChaseAttempts();
+      return true;
+    }
+
+    // No new record -> count one more attempt.
+    if (maxLevelChaseAttempts_ < 65535u) {
+      maxLevelChaseAttempts_++;
+    }
+    (void)saveMaxLevelChaseAttempts();
+    return false;
+  };
+
   // Remember whether this run is allowed to write highscores. The display uses
   // this to decide when to enable "chasing the record" border FX.
   allowHighScore_ = allowHighScore && !testMode_;
@@ -344,12 +388,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
   }
   
   if (gameOver_) {
-      // Persist records only when this run is allowed to.
-      if (allowHighScore_) {
-        (void)saveHasPlayed();
-        (void)saveHighScore();
-        if (saveMaxLevel()) tr.newMaxLevel = true;
-      }
+      if (persistRecordsOnGameOver()) tr.newMaxLevel = true;
       tr.gameOver = true;
       return tr;
   }
@@ -384,11 +423,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
     hardDrop(nowMs, tr.levelUp);
     lastFallMs_ = nowMs;
     if (gameOver_) { 
-        if (allowHighScore_) {
-          (void)saveHasPlayed();
-          (void)saveHighScore();
-          if (saveMaxLevel()) tr.newMaxLevel = true;
-        }
+        if (persistRecordsOnGameOver()) tr.newMaxLevel = true;
         tr.gameOver = true; 
     } 
     return tr;
@@ -400,11 +435,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
       tryMove(nowMs, 0, +1, tr.levelUp);
     }
     if (gameOver_) { 
-        if (allowHighScore_) {
-          (void)saveHasPlayed();
-          (void)saveHighScore();
-          if (saveMaxLevel()) tr.newMaxLevel = true;
-        }
+        if (persistRecordsOnGameOver()) tr.newMaxLevel = true;
         tr.gameOver = true; 
     } 
     return tr;
@@ -414,11 +445,7 @@ TetrisGame::TickResult TetrisGame::tick(uint32_t nowMs, const Actions& a, bool a
     lastFallMs_ = nowMs;
     tryMove(nowMs, 0, +1, tr.levelUp);
     if (gameOver_) { 
-        if (allowHighScore_) {
-          (void)saveHasPlayed();
-          (void)saveHighScore();
-          if (saveMaxLevel()) tr.newMaxLevel = true;
-        }
+        if (persistRecordsOnGameOver()) tr.newMaxLevel = true;
         tr.gameOver = true; 
     } 
   }

@@ -42,6 +42,10 @@ public:
   // run as a test so highscores won't be saved.
   void debugSetLevel(uint32_t nowMs, uint8_t level);
 
+  // Debug helper: after a blocking screen (e.g., game over preview) re-sync the
+  // internal clocks so gameplay doesn't "jump" (instant drops, etc.).
+  void debugResyncTimers(uint32_t nowMs);
+
 
   bool isGameOver() const { return gameOver_; }
   bool isClearingLines() const { return clearing_; }
@@ -56,6 +60,13 @@ public:
   // The best (highest) level ever reached (persistent). This is the primary
   // "record" for the tiny LED version.
   uint8_t maxLevel() const { return maxLevel_; }
+
+  // Persistent counter: how many completed (record-eligible) game-overs have
+  // occurred since the current maxLevel_ record was set.
+  //
+  // This is used to drive a "record chase" background/progress indicator on
+  // the MAX level screen.
+  uint16_t maxLevelChaseAttempts() const { return maxLevelChaseAttempts_; }
 
   // True after at least one completed (non-test) game has occurred.
   // Used to avoid "record chase" border FX during the very first run.
@@ -111,6 +122,7 @@ private:
   bool saveHighScore();
   bool saveMaxLevel();
   bool saveHasPlayed();
+  bool saveMaxLevelChaseAttempts();
 
 private:
   uint8_t board_[BOARD_H][BOARD_W] = {};
@@ -133,6 +145,10 @@ private:
   uint8_t highLevel_ = 1; 
 
   uint8_t maxLevel_ = 1;
+
+  // How many record-eligible runs have ended without setting a new maxLevel_.
+  // Resets to 0 whenever a new max level is saved.
+  uint16_t maxLevelChaseAttempts_ = 0;
 
   bool hasPlayed_ = false;
 

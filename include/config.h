@@ -80,6 +80,20 @@
 // Duration (ms) of the milestone border reveal animation.
 #define MILESTONE_BORDER_REVEAL_MS 1400
 
+// ======================
+// Record chase progress background
+// ======================
+// The MAX level screen (boot + game-over) can show a simple "attempts" meter:
+// each completed record-eligible run increments a counter until a new MAX
+// level is achieved (then the counter resets to 0).
+//
+// Visually, this fills the MAX background like a progress bar. Once fully
+// filled, the MAX background becomes the new color.
+#define MAX_LEVEL_CHASE_PROGRESS_ENABLED true
+// Number of "steps" to fill before the MAX background is fully the new color.
+// On a 16x16 matrix, 16 steps = 1 row per attempt.
+#define MAX_LEVEL_CHASE_PROGRESS_STEPS 16
+
 
 // ======================
 // USB power / dev safety

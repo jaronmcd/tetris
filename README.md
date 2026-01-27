@@ -90,6 +90,12 @@ These are handy for quickly testing animations without playing a full game:
 - **[ / ]** → level **-1 / +1** (animates transition)
 - **{ / }** → level **-10 / +10**
 - **h** → toggle **“high score” border style** (forces the rainbow arcade border)
+- **b** → preview **boot stats** (MAX level screen)
+- **o** → preview **game over** (live: current level + saved MAX)
+- **p** → preview **game over** (forced non-record: always shows both screens)
+- **t** → preview **game over** (forced tie/record style)
+- **m** → preview **new MAX level celebration**
+- **g** → preview **MAX chase progress** (cycles fill + colors)
 - **0 / 1 / 2 / 3** → set AI speed profile (slow → turbo)
 
 The firmware prints a reminder of these keys on boot over Serial.
@@ -112,10 +118,19 @@ Useful settings:
 - `LEVEL_NUMBER_DROPDOWN_ENABLED` – show/hide the in-game level number “drop-down” overlay during level transitions
 - `MILESTONE_BORDER_REVEAL_ENABLED` – border-only celebration when entering a new 10-level border style (levels 11/21/31/...)
 - `MILESTONE_BORDER_REVEAL_MS` – duration (ms) of the milestone border reveal animation
+- `MAX_LEVEL_CHASE_PROGRESS_ENABLED` – enable the MAX-level "attempts" progress background (boot + game over)
+- `MAX_LEVEL_CHASE_PROGRESS_STEPS` – steps to fully fill the progress background (16 = 1 row per attempt on a 16x16)
+  - Color cycles: every time the meter fully fills, the MAX background advances to a new hue and keeps going.
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot
 - `AI_SAVES_HIGH_SCORE` – allow demo AI to write new records
 
-High scores are stored using ESP32 **Preferences** under namespace `tetris` with keys `hs` and `hl`.
+Records are stored using ESP32 **Preferences** under namespace `tetris`:
+
+- `ml` = MAX level ever reached (primary record for the tiny LED UI)
+- `hs` = classic score (points)
+- `hl` = level associated with `hs`
+- `pg` = has-played flag (used to gate "chasing the record" FX)
+- `ma` = MAX-level chase attempts counter (completed record-eligible runs since `ml` was last updated)
 
 ---
 
