@@ -51,10 +51,23 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
   uint8_t d1 = (uint8_t)(value % 10);
   const bool twoDigits = (value >= 10);
 
-  const int digitW = 5 * scale;
-  const int digitH = 7 * scale;
-  const int spacing = scale; // 1*scale spacing
+  // Auto-fit the requested scale to the physical matrix.
+  // On a 16x16 display, 5x7 digits at scale=2 fit for 1-digit values,
+  // but 2-digit values would clip. This keeps the "NEW MAX" / party
+  // overlay readable for 10+.
+  uint8_t s = (scale < 1) ? 1 : scale;
+  while (s > 1) {
+    const int digitW = 5 * s;
+    const int digitH = 7 * s;
+    const int spacing = s; // 1*scale spacing
+    const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
+    if (totalW <= MATRIX_W && digitH <= MATRIX_H) break;
+    s--;
+  }
 
+  const int digitW = 5 * s;
+  const int digitH = 7 * s;
+  const int spacing = s; // 1*scale spacing
   const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
 
   int16_t startX = (int16_t)((MATRIX_W - totalW) / 2);
@@ -64,10 +77,10 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
   if (startY < 0) startY = 0;
 
   if (!twoDigits) {
-    drawDigit5x7Scaled(d1, startX, startY, scale, color);
+    drawDigit5x7Scaled(d1, startX, startY, s, color);
   } else {
-    drawDigit5x7Scaled(d0, startX, startY, scale, color);
-    drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing), startY, scale, color);
+    drawDigit5x7Scaled(d0, startX, startY, s, color);
+    drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing), startY, s, color);
   }
 
 }

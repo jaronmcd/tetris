@@ -25,4 +25,13 @@ struct Actions {
   // Debug: toggle "high score border" mode for testing (serial-only)
   bool toggleHighScoreBorders = false;
 
+  // Debug: preview high-score / end-of-run screens (serial-only)
+  // 0 = none
+  // 1 = boot stats (MAX level)
+  // 2 = game over (current + max, using live values)
+  // 3 = game over (forced non-record, always shows both screens)
+  // 4 = game over (forced tie/record style)
+  // 5 = new MAX level celebration
+  uint8_t previewScreen = 0;
+
 };

@@ -90,6 +90,11 @@ These are handy for quickly testing animations without playing a full game:
 - **[ / ]** → level **-1 / +1** (animates transition)
 - **{ / }** → level **-10 / +10**
 - **h** → toggle **“high score” border style** (forces the rainbow arcade border)
+- **b** → preview **boot stats** (MAX level screen)
+- **o** → preview **game over** (live: current level + saved MAX)
+- **p** → preview **game over** (forced non-record: always shows both screens)
+- **t** → preview **game over** (forced tie/record style)
+- **m** → preview **new MAX level celebration**
 - **0 / 1 / 2 / 3** → set AI speed profile (slow → turbo)
 
 The firmware prints a reminder of these keys on boot over Serial.
@@ -115,7 +120,12 @@ Useful settings:
 - `RESET_SCORES_ON_BOOT` – wipe saved score/level on boot
 - `AI_SAVES_HIGH_SCORE` – allow demo AI to write new records
 
-High scores are stored using ESP32 **Preferences** under namespace `tetris` with keys `hs` and `hl`.
+Records are stored using ESP32 **Preferences** under namespace `tetris`:
+
+- `ml` = MAX level ever reached (primary record for the tiny LED UI)
+- `hs` = classic score (points)
+- `hl` = level associated with `hs`
+- `pg` = has-played flag (used to gate "chasing the record" FX)
 
 ---
 

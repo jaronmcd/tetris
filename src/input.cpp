@@ -71,6 +71,18 @@ Actions InputManager::readSerial() {
     else if (ch == '}') a.testLevelDelta += 10;
     else if (ch == '{') a.testLevelDelta -= 10;
     else if (ch == 'h' || ch == 'H') a.toggleHighScoreBorders = true;
+
+    // Debug: preview high-score screens (serial-only)
+    //   b = boot stats (MAX level)
+    //   o = game over (live values)
+    //   p = game over (forced non-record)
+    //   t = game over (forced tie/record style)
+    //   m = new MAX level celebration
+    else if (ch == 'b' || ch == 'B') a.previewScreen = 1;
+    else if (ch == 'o' || ch == 'O') a.previewScreen = 2;
+    else if (ch == 'p' || ch == 'P') a.previewScreen = 3;
+    else if (ch == 't' || ch == 'T') a.previewScreen = 4;
+    else if (ch == 'm' || ch == 'M') a.previewScreen = 5;
   }
   return a;
 }
@@ -124,5 +136,6 @@ Actions InputManager::readActions() {
   out.testClearLines = s.testClearLines;
   out.testLevelDelta = s.testLevelDelta;
   out.toggleHighScoreBorders = s.toggleHighScoreBorders;
+  out.previewScreen = s.previewScreen;
   return out;
 }

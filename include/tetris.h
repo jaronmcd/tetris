@@ -42,6 +42,10 @@ public:
   // run as a test so highscores won't be saved.
   void debugSetLevel(uint32_t nowMs, uint8_t level);
 
+  // Debug helper: after a blocking screen (e.g., game over preview) re-sync the
+  // internal clocks so gameplay doesn't "jump" (instant drops, etc.).
+  void debugResyncTimers(uint32_t nowMs);
+
 
   bool isGameOver() const { return gameOver_; }
   bool isClearingLines() const { return clearing_; }

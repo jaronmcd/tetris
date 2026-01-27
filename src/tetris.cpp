@@ -259,6 +259,17 @@ void TetrisGame::debugSetLevel(uint32_t nowMs, uint8_t level) {
   // Reset fall timer so you don't get an immediate surprise drop.
   lastFallMs_ = nowMs;
 }
+
+void TetrisGame::debugResyncTimers(uint32_t nowMs) {
+  // Used when the main loop runs a blocking preview screen (delays).
+  // Keep the game from "fast-forwarding" when control returns.
+  lastFallMs_ = nowMs;
+  if (clearing_) {
+    // Keep any in-progress line-clear FX from immediately completing.
+    clearStartMs_ = nowMs;
+  }
+}
+
 void TetrisGame::applyLineClear(bool& levelUp) {
   uint8_t newBoard[BOARD_H][BOARD_W];
   memset(newBoard, 0, sizeof(newBoard));

@@ -82,7 +82,12 @@ display.bootFlash(); // RGB Flash
   Serial.println("  z/x/c/v = force 1/2/3/4-line clear FX (test mode)");
   Serial.println("  [ / ]   = level -1 / +1 (animates transition, test mode)");
   Serial.println("  { / }   = level -10 / +10 (animates transition, test mode)");
-  Serial.println("  h       = toggle high-score border style (test mode)\n");
+  Serial.println("  h       = toggle high-score border style (test mode)");
+  Serial.println("  b       = preview boot stats (MAX level screen)");
+  Serial.println("  o       = preview game over (live: current+max)");
+  Serial.println("  p       = preview game over (forced non-record)");
+  Serial.println("  t       = preview game over (forced tie/record)");
+  Serial.println("  m       = preview new MAX level celebration\n");
 }
 
 void loop() {
@@ -102,6 +107,76 @@ void loop() {
     display.setDebugForceHighScoreBorders(debugForceHighScoreBorders);
     Serial.print(">> DEBUG: High-score border ");
     Serial.println(debugForceHighScoreBorders ? "ON" : "OFF");
+  }
+
+  // Serial-only debug: preview the high-score / end-of-run screens without
+  // having to play a full game. These screens are blocking (they use delays),
+  // so after they return we re-sync the game's timing.
+  if (human.previewScreen != 0) {
+    uint8_t ml = game.maxLevel();
+    uint8_t lvl = game.level();
+
+    switch (human.previewScreen) {
+      case 1: {
+        Serial.print(">> DEBUG PREVIEW: Boot stats (MAX level = ");
+        Serial.print(ml);
+        Serial.println(")");
+        display.showBootStats(ml, nullptr);
+      } break;
+
+      case 2: {
+        Serial.print(">> DEBUG PREVIEW: Game over (level=");
+        Serial.print(lvl);
+        Serial.print(", max=");
+        Serial.print(ml);
+        Serial.println(")");
+        display.showGameOver(lvl, ml);
+      } break;
+
+      case 3: {
+        // Force the two-screen version even if the current run is a tie/record.
+        uint8_t maxShown = (ml < 2) ? 2 : ml;
+        uint8_t levelShown = (maxShown > 1) ? (uint8_t)(maxShown - 1) : 1;
+        Serial.print(">> DEBUG PREVIEW: Game over (forced non-record, level=");
+        Serial.print(levelShown);
+        Serial.print(", max=");
+        Serial.print(maxShown);
+        Serial.println(")");
+        display.showGameOver(levelShown, maxShown);
+      } break;
+
+      case 4: {
+        Serial.print(">> DEBUG PREVIEW: Game over (forced tie/record, level=max=");
+        Serial.print(ml);
+        Serial.println(")");
+        display.showGameOver(ml, ml);
+      } break;
+
+      case 5: {
+        uint8_t show = (ml < 99) ? (uint8_t)(ml + 1) : ml;
+        Serial.print(">> DEBUG PREVIEW: New MAX level celebration (");
+        Serial.print(show);
+        Serial.println(")");
+        display.showNewMaxLevel(show);
+      } break;
+    }
+
+    // Treat this as a "human activity" so demo-mode doesn't unexpectedly flip.
+    // (But do not force-exit AI mode.)
+    uint32_t afterMs = millis();
+    lastHumanMs = afterMs;
+    now = afterMs; // keep the rest of the loop consistent after blocking delays
+
+    // Re-sync timers after blocking screens so the piece doesn't instantly drop.
+    game.debugResyncTimers(afterMs);
+    display.tickPowerBrightness(afterMs);
+
+    // Small input flush so the preview key doesn't accidentally also act as a control.
+    for (int i = 0; i < 3; i++) {
+      input.update();
+      input.readActions();
+      delay(15);
+    }
   }
 
   if (anyHumanAction(human)) {
