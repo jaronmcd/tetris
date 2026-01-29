@@ -95,6 +95,11 @@ public:
   int8_t currentX() const { return cur_.x; }
   int8_t currentY() const { return cur_.y; }
   uint8_t currentRotation() const { return cur_.rot; }
+
+  // Peek the next piece in the current 7-bag (for AI lookahead).
+  // Returns 0..6. If the bag is about to be refilled (next piece unknown), returns 255.
+  uint8_t peekNextPieceType() const;
+
   static const uint16_t (*getShapes())[4]; 
 
 private:

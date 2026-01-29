@@ -105,6 +105,237 @@ static void shapeBoundsCols(uint8_t type, uint8_t rot, int& minC, int& maxC) {
   if (!any) { minC = 0; maxC = 0; }
 }
 
+
+
+// --- AI board features / scoring (used by the MAX-chase "smartness" ladder) ---
+static int rowTransitionsAI(const uint8_t board[BOARD_H][BOARD_W]) {
+  int t = 0;
+  for (int y = 0; y < BOARD_H; y++) {
+    int prev = 1; // left wall
+    for (int x = 0; x < BOARD_W; x++) {
+      int cur = (board[y][x] != 0) ? 1 : 0;
+      if (cur != prev) t++;
+      prev = cur;
+    }
+    if (prev == 0) t++; // right wall
+  }
+  return t;
+}
+
+static int colTransitionsAI(const uint8_t board[BOARD_H][BOARD_W]) {
+  int t = 0;
+  for (int x = 0; x < BOARD_W; x++) {
+    int prev = 1; // top wall
+    for (int y = 0; y < BOARD_H; y++) {
+      int cur = (board[y][x] != 0) ? 1 : 0;
+      if (cur != prev) t++;
+      prev = cur;
+    }
+    if (prev == 0) t++; // bottom wall
+  }
+  return t;
+}
+
+static int wellSumsAI(const uint8_t board[BOARD_H][BOARD_W]) {
+  // Simple "well" measure: consecutive empty cells that are bounded on both sides.
+  // Encourages a clean single well and discourages random pits.
+  int sum = 0;
+  for (int x = 0; x < BOARD_W; x++) {
+    for (int y = 0; y < BOARD_H; y++) {
+      if (board[y][x] != 0) continue;
+      bool leftFilled  = (x == 0) ? true : (board[y][x - 1] != 0);
+      bool rightFilled = (x == (BOARD_W - 1)) ? true : (board[y][x + 1] != 0);
+      if (!(leftFilled && rightFilled)) continue;
+
+      // Depth downward in this well (bounded on both sides).
+      int depth = 1;
+      for (int yy = y + 1; yy < BOARD_H; yy++) {
+        if (board[yy][x] != 0) break;
+        bool lf = (x == 0) ? true : (board[yy][x - 1] != 0);
+        bool rf = (x == (BOARD_W - 1)) ? true : (board[yy][x + 1] != 0);
+        if (!(lf && rf)) break;
+        depth++;
+      }
+      // Triangular sum (1+2+...+depth) favors deeper wells.
+      sum += (depth * (depth + 1)) / 2;
+    }
+  }
+  return sum;
+}
+
+struct AIWeights {
+  int wClear;
+  int wHoles;
+  int wAggH;
+  int wBump;
+  int wMaxH;
+  int wRowT;
+  int wColT;
+  int wWells;
+  int wLand;
+};
+
+static inline uint8_t weightTierForSkill(uint8_t skill) {
+  // Skill 3 is "skill 2 weights + lookahead".
+  if (skill == 3) return 2;
+  if (skill >= 4) return 4;
+  return skill;
+}
+
+static AIWeights weightsForTier(uint8_t tier) {
+  // Base weights (tier=1): current tuned values.
+  AIWeights w{};
+  w.wClear = 100000;
+  w.wHoles = 6000;
+  w.wAggH  = 250;
+  w.wBump  = 350;
+  w.wMaxH  = 200;
+  w.wRowT  = 0;
+  w.wColT  = 0;
+  w.wWells = 0;
+  w.wLand  = 0;
+
+  if (tier >= 2) {
+    w.wHoles = 6500;
+    w.wAggH  = 270;
+    w.wBump  = 380;
+    w.wMaxH  = 230;
+    w.wRowT  = 120;
+    w.wColT  = 160;
+    w.wWells = 60;
+    w.wLand  = 55;
+  }
+
+  if (tier >= 4) {
+    w.wHoles = 7200;
+    w.wAggH  = 300;
+    w.wBump  = 420;
+    w.wMaxH  = 280;
+    w.wRowT  = 140;
+    w.wColT  = 190;
+    w.wWells = 85;
+    w.wLand  = 70;
+  }
+
+  if (tier == 0) {
+    // Intentionally a little "sloppy" for very low skill (useful for testing the ladder).
+    w.wHoles = 4200;
+    w.wAggH  = 200;
+    w.wBump  = 260;
+    w.wMaxH  = 160;
+    w.wRowT  = 0;
+    w.wColT  = 0;
+    w.wWells = 0;
+    w.wLand  = 0;
+  }
+
+  return w;
+}
+
+static inline int lerpInt(int a, int b, uint8_t pct) {
+  // pct: 0..100
+  return a + ((b - a) * (int)pct) / 100;
+}
+
+static AIWeights blendWeights(const AIWeights& a, const AIWeights& b, uint8_t pct) {
+  AIWeights o;
+  o.wClear = lerpInt(a.wClear, b.wClear, pct);
+  o.wHoles = lerpInt(a.wHoles, b.wHoles, pct);
+  o.wAggH  = lerpInt(a.wAggH,  b.wAggH,  pct);
+  o.wBump  = lerpInt(a.wBump,  b.wBump,  pct);
+  o.wMaxH  = lerpInt(a.wMaxH,  b.wMaxH,  pct);
+  o.wRowT  = lerpInt(a.wRowT,  b.wRowT,  pct);
+  o.wColT  = lerpInt(a.wColT,  b.wColT,  pct);
+  o.wWells = lerpInt(a.wWells, b.wWells, pct);
+  o.wLand  = lerpInt(a.wLand,  b.wLand,  pct);
+  return o;
+}
+
+static int evalPlacementScoreAI(const uint8_t board[BOARD_H][BOARD_W], int cleared, int landingY, uint8_t skillBase, uint8_t rampPct) {
+  int heights[BOARD_W];
+  int aggHeight = 0, holes = 0, bump = 0;
+  columnStats(board, heights, aggHeight, holes, bump);
+
+  int maxH = 0;
+  for (int i = 0; i < BOARD_W; i++) if (heights[i] > maxH) maxH = heights[i];
+
+  // landing height: higher placement is riskier (top-out). Clamp y.
+  if (landingY < 0) landingY = 0;
+  if (landingY > (BOARD_H - 1)) landingY = (BOARD_H - 1);
+  int landingHeight = BOARD_H - landingY;
+
+  uint8_t s0 = skillBase;
+  if (s0 > (uint8_t)AI_SMARTNESS_MAX) s0 = (uint8_t)AI_SMARTNESS_MAX;
+
+  // Blend weights toward the next skill tier as the MAX-chase bar fills.
+  // This keeps the *major* milestones identical (skill changes only on full cycles),
+  // but makes the AI a little better with each ...
+  uint8_t s1 = s0;
+  uint8_t pct = 0;
+  if (s0 < (uint8_t)AI_SMARTNESS_MAX) {
+    s1 = (uint8_t)(s0 + 1);
+    pct = rampPct;
+    if (pct > 100) pct = 100;
+  }
+
+  uint8_t t0 = weightTierForSkill(s0);
+  uint8_t t1 = weightTierForSkill(s1);
+  AIWeights w = (t0 == t1 || pct == 0) ? weightsForTier(t0)
+                                      : blendWeights(weightsForTier(t0), weightsForTier(t1), pct);
+
+  int rt = (w.wRowT != 0) ? rowTransitionsAI(board) : 0;
+  int ct = (w.wColT != 0) ? colTransitionsAI(board) : 0;
+  int wells = (w.wWells != 0) ? wellSumsAI(board) : 0;
+
+  int score = 0;
+  score += cleared * w.wClear;
+  score -= holes * w.wHoles;
+  score -= aggHeight * w.wAggH;
+  score -= bump * w.wBump;
+  score -= maxH * w.wMaxH;
+  score -= rt * w.wRowT;
+  score -= ct * w.wColT;
+  score -= wells * w.wWells;
+  score -= landingHeight * w.wLand;
+
+  if (skillBase == 0) {
+    // Add a little randomness so it visibly "learns" as skill rises.
+    int32_t n = (int32_t)(esp_random() % 20001u) - 10000; // [-10k, +10k]
+    score += (int)n;
+  }
+
+  return score;
+}
+
+static int bestScoreForPieceAI(const uint8_t base[BOARD_H][BOARD_W], uint8_t type, uint8_t skill) {
+  const int kNegInf = -2147483647;
+  int best = kNegInf;
+
+  for (uint8_t rot = 0; rot < 4; rot++) {
+    int minC, maxC;
+    shapeBoundsCols(type, rot, minC, maxC);
+
+    int8_t minX = (int8_t)(-minC);
+    int8_t maxX = (int8_t)(BOARD_W - 1 - maxC);
+
+    for (int8_t x = minX; x <= maxX; x++) {
+      int8_t y = -4;
+      if (!fits(base, type, rot, x, y)) continue;
+
+      while (fits(base, type, rot, x, (int8_t)(y + 1))) y++;
+
+      uint8_t tmp[BOARD_H][BOARD_W];
+      memcpy(tmp, base, sizeof(tmp));
+      place(tmp, type, rot, x, y);
+      int cleared = clearLinesSim(tmp);
+
+      int score = evalPlacementScoreAI(tmp, cleared, y, skill, 0);
+      if (score > best) best = score;
+    }
+  }
+
+  return best;
+}
 uint32_t TetrisAI::jitterMs(uint32_t base, uint32_t spread) const {
   // base +/- up to spread ms (clamped at 0)
   uint32_t r = esp_random();
@@ -135,6 +366,24 @@ void TetrisAI::setProfile(uint8_t p) {
   reset();
 }
 
+
+
+void TetrisAI::setSkill(uint8_t s) {
+  // Clamp to configured range.
+  if (s > (uint8_t)AI_SMARTNESS_MAX) s = (uint8_t)AI_SMARTNESS_MAX;
+  if (skill_ == s) return;
+  skill_ = s;
+  reset();
+}
+
+void TetrisAI::setSkillRampPct(uint8_t pct) {
+  if (pct > 100) pct = 100;
+  // If we're already at max skill, ramp has no effect.
+  if (skill_ >= (uint8_t)AI_SMARTNESS_MAX) pct = 0;
+  if (skillRampPct_ == pct) return;
+  skillRampPct_ = pct;
+  // Intentionally do NOT reset() here; we allow the ramp to change smoothly.
+}
 void TetrisAI::reset() {
   lastPieceSeq_ = 0;
   phase_ = WAIT_THINK;
@@ -147,6 +396,7 @@ void TetrisAI::reset() {
   plan_ = {};
 }
 
+
 TetrisAI::Plan TetrisAI::computePlan(const TetrisGame& g) const {
   Plan best;
   best.valid = false;
@@ -157,7 +407,34 @@ TetrisAI::Plan TetrisAI::computePlan(const TetrisGame& g) const {
   auto p = g.currentPiece();
   uint8_t type = p.type;
 
-  int bestScore = -2147483647;
+  // Skill ladder (0..AI_SMARTNESS_MAX). Higher => better placement quality.
+  uint8_t skill = skill_;
+  if (skill > (uint8_t)AI_SMARTNESS_MAX) skill = (uint8_t)AI_SMARTNESS_MAX;
+
+  // 0..100 progress toward the next skill tier (driven by MAX chase bar fill).
+  uint8_t rampPct = skillRampPct_;
+  if (skill >= (uint8_t)AI_SMARTNESS_MAX) rampPct = 0;
+
+  // Lookahead is the "big" milestone at skill>=3.
+  // To make progress incremental per MAX-chase bar, we smoothly ramp the
+  // lookahead influence as we approach/advance toward that milestone.
+  uint8_t nextType = 255;
+  uint8_t lookaheadWeightPct = 0;
+  if (skill >= 4) {
+    lookaheadWeightPct = 70;
+    nextType = g.peekNextPieceType();
+  } else if (skill == 3) {
+    // Ramp lookahead strength toward skill-4 behavior.
+    lookaheadWeightPct = (uint8_t)(55 + ((70 - 55) * (uint16_t)rampPct) / 100u);
+    nextType = g.peekNextPieceType();
+  } else if (skill == 2) {
+    // Start introducing lookahead before the milestone (up to the normal 55%).
+    lookaheadWeightPct = (uint8_t)((55u * (uint16_t)rampPct) / 100u);
+    if (lookaheadWeightPct > 0) nextType = g.peekNextPieceType();
+  }
+
+  const int kNegInf = -2147483647;
+  int bestScore = kNegInf;
 
   for (uint8_t rot = 0; rot < 4; rot++) {
     int minC, maxC;
@@ -178,23 +455,16 @@ TetrisAI::Plan TetrisAI::computePlan(const TetrisGame& g) const {
 
       int cleared = clearLinesSim(tmp);
 
-      int heights[BOARD_W];
-      int aggHeight, holes, bump;
-      columnStats(tmp, heights, aggHeight, holes, bump);
+      int score = evalPlacementScoreAI(tmp, cleared, y, skill, rampPct);
 
-      int maxH = 0;
-      for (int i = 0; i < BOARD_W; i++) if (heights[i] > maxH) maxH = heights[i];
-
-      // Heuristic:
-      // + clears (big reward)
-      // - holes (big penalty)
-      // - height / bump / top-out risk
-      int score =
-          cleared * 100000
-        - holes * 6000
-        - aggHeight * 250
-        - bump * 350
-        - maxH * 200;
+      if (lookaheadWeightPct > 0 && nextType <= 6) {
+        // Lookahead one move: choose the best placement for the next piece on this resulting board.
+        uint8_t nextSkill = (skill > 0) ? (uint8_t)(skill - 1) : 0;
+        int nextScore = bestScoreForPieceAI(tmp, nextType, nextSkill);
+        if (nextScore != kNegInf) {
+          score += (nextScore * (int)lookaheadWeightPct) / 100;
+        }
+      }
 
       if (!best.valid || score > bestScore) {
         best.valid = true;
@@ -212,7 +482,6 @@ TetrisAI::Plan TetrisAI::computePlan(const TetrisGame& g) const {
   }
   return best;
 }
-
 Actions TetrisAI::think(const TetrisGame& g, uint32_t nowMs) {
   Actions a;
 

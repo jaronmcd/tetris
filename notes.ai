@@ -41,3 +41,27 @@ notes.ai — running assistant notes (user-managed)
 - Updated MAX chase progress background to cycle through an effectively infinite set of colors:
   - Each time attempts reach MAX_LEVEL_CHASE_PROGRESS_STEPS, the background advances to a new hue.
   - Further attempts continue filling toward the next hue (no saturation to one color forever).
+
+2026-01-26
+- v16+: Added AI "smartness" ladder tied to MAX-level chase background cycles:
+  - Each completed MAX chase fill cycle (full background color) increments AI decision quality.
+  - Implemented as an AI skill level (0..AI_SMARTNESS_MAX) separate from AI speed profile.
+  - Higher skill adds extra board features (row/col transitions, wells, landing-height) and at skill>=3 adds 1-ply lookahead using peekNextPieceType().
+  - New config knobs: AI_SMARTNESS_FROM_MAX_CHASE_ENABLED / AI_SMARTNESS_BASE / AI_SMARTNESS_MAX.
+
+2026-01-28
+- Border glitch fix: boss-level (decade) locked-piece hue wipe no longer restarts mid-flight when pieces lock quickly; it only restarts after the previous 600ms wipe completes.
+- Border glow scope: reactive "sphere" glow is now enabled only on decade levels (10/20/30/...), keeping non-decade levels classic.
+
+2026-01-28
+- AI incremental "learning": AI skill still steps up only when the MAX chase progress completes a full fill cycle (milestones unchanged),
+  but now it also ramps within the cycle based on the per-attempt "color bar" fill:
+  - main.cpp computes a 0..100 ramp percentage from attempts%STEPS.
+  - ai.cpp blends heuristic weights toward the next tier and smoothly ramps lookahead strength (especially while approaching skill>=3).
+
+2026-01-29
+- Added the MAX-level "high screen" status to the power-up sequence:
+  - main.cpp now calls MatrixDisplay::showBootStats(maxLevel, chaseAttempts) during setup when BOOT_STATS_ENABLED is true.
+  - BOOT_STATS_ENABLED default set to true in config.h (set false to skip this screen).
+  - After the blocking boot screen, setup re-syncs game timers via debugResyncTimers() so gameplay doesn't fast-forward.
+- Reliability tweak: showLevelNumberScreen()/showMaxLevelNumberScreen()/showBootLogo()/showNewMaxLevel() now tickPowerBrightness() each frame so brightness fades still progress when intros are skipped/disabled.

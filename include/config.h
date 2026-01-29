@@ -59,8 +59,7 @@
 #define INTRO_MARQUEE_SPEED_MS_END 10
 
 // Boot stats (MAX level screen)
-#define BOOT_STATS_ENABLED false
-
+#define BOOT_STATS_ENABLED true
 // ======================
 // In-game UI
 // ======================
@@ -127,3 +126,24 @@
 
 #define RESET_SCORES_ON_BOOT false
 #define AI_SAVES_HIGH_SCORE true
+
+// ======================
+// AI "smartness" ladder (ties into MAX chase color cycles)
+// ======================
+// Each time the MAX chase progress hits a *full* background color (i.e., each
+// completed fill cycle), the AI can step up its decision quality.
+//
+// This is separate from the AI speed profile (0..3). The profile affects how
+// fast the AI presses buttons; this ladder affects how good its placements are.
+#define AI_SMARTNESS_FROM_MAX_CHASE_ENABLED true
+
+// Starting AI skill (1 = current baseline). 0 is intentionally a little "sloppy"
+// for testing the ladder.
+#define AI_SMARTNESS_BASE 1
+
+// Upper bound on skill (keeps CPU usage predictable on the MCU).
+// 1 = baseline heuristic
+// 2 = adds more board features (transitions/wells)
+// 3 = adds 1-ply next-piece lookahead (when next piece is known)
+// 4 = stronger weights + lookahead
+#define AI_SMARTNESS_MAX 4

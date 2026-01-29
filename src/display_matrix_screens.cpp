@@ -92,6 +92,8 @@ bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t f
   while ((millis() - start) < durationMs) {
     if (abortFn && abortFn()) return true;
 
+    tickPowerBrightness(millis());
+
     strip_.fill(bg);
     drawNumberCentered(value, scale, fg);
     strip_.show();
@@ -169,6 +171,8 @@ bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
   while ((millis() - start) < durationMs) {
     if (abortFn && abortFn()) return true;
 
+    tickPowerBrightness(millis());
+
     fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts);
     drawNumberCentered(value, scale, fg);
     strip_.show();
@@ -186,6 +190,7 @@ void MatrixDisplay::showBootLogo(uint32_t durationMs, AbortFn abortFn) {
     if (abortFn && abortFn()) return;
 
     uint32_t now = millis();
+    tickPowerBrightness(now);
 
     uint16_t phase = (uint16_t)((now / 8) & 0x01FF);
     if (phase > 255) phase = (uint16_t)(511 - phase);
@@ -254,6 +259,7 @@ void MatrixDisplay::showNewMaxLevel(uint8_t maxLevel) {
 
   while ((millis() - startMs) < partyMs) {
     uint32_t now = millis();
+    tickPowerBrightness(now);
 
     for (uint8_t y = 0; y < MATRIX_H; y++) {
       for (uint8_t x = 0; x < MATRIX_W; x++) {

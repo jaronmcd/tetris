@@ -154,6 +154,13 @@ void TetrisGame::refillBag() {
   bagIdx_ = 0;
 }
 
+uint8_t TetrisGame::peekNextPieceType() const {
+  // If bagIdx_ is at the end, nextPieceType() will refill/shuffle, so we
+  // intentionally report unknown (255) rather than guessing.
+  if (bagIdx_ >= 7) return 255;
+  return bag_[bagIdx_];
+}
+
 uint8_t TetrisGame::nextPieceType() {
   if (bagIdx_ >= 7) refillBag();
   return bag_[bagIdx_++];
