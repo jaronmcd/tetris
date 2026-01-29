@@ -21,6 +21,7 @@ static uint16_t debugPreviewMaxChaseAttempts = 0;
 
 // AI smartness ladder (auto-set from MAX chase cycles)
 static uint8_t lastAutoAiSkill = 255;
+static uint8_t lastAutoAiRampPct = 255;
 
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
@@ -116,15 +117,26 @@ void loop() {
   // how fast the AI presses buttons; the smartness ladder controls how good
   // its placements are.
   uint8_t targetSkill = (uint8_t)AI_SMARTNESS_BASE;
+  uint8_t targetRampPct = 0;
   uint32_t chaseCycle = 0;
 #if AI_SMARTNESS_FROM_MAX_CHASE_ENABLED && MAX_LEVEL_CHASE_PROGRESS_ENABLED
   uint16_t steps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
   if (steps == 0) steps = 1;
   uint16_t attempts = game.maxLevelChaseAttempts();
   chaseCycle = (uint32_t)(attempts / steps);
+  uint16_t inCycle = (uint16_t)(attempts % steps);
   uint32_t s = (uint32_t)AI_SMARTNESS_BASE + chaseCycle;
   if (s > (uint32_t)AI_SMARTNESS_MAX) s = (uint32_t)AI_SMARTNESS_MAX;
   targetSkill = (uint8_t)s;
+
+  // Incremental "learning": as the MAX chase progress bar fills (0..steps-1),
+  // ramp toward the next skill tier. Major milestones remain unchanged (skill
+  // still only increases on a full fill cycle).
+  if (targetSkill < (uint8_t)AI_SMARTNESS_MAX) {
+    targetRampPct = (uint8_t)(((uint32_t)inCycle * 100u) / (uint32_t)steps);
+  } else {
+    targetRampPct = 0;
+  }
 #endif
   if (targetSkill != lastAutoAiSkill) {
     lastAutoAiSkill = targetSkill;
@@ -138,6 +150,11 @@ void loop() {
 #else
     Serial.println();
 #endif
+  }
+
+  if (targetRampPct != lastAutoAiRampPct) {
+    lastAutoAiRampPct = targetRampPct;
+    ai.setSkillRampPct(targetRampPct);
   }
 
   if (human.toggleHighScoreBorders) {

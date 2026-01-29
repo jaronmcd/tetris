@@ -404,7 +404,7 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   uint32_t base = strip_.ColorHSV(baseHue, sat, val);
 
   // High-score mode: continuous rainbow irradiation from the falling piece.
-  if (g_highScoreRainbowMode && g_focusActive && g_focusStrength) {
+  if (g_highScoreRainbowMode && ((g.level() % 10) == 0) && g_focusActive && g_focusStrength) {
     // How close is the piece to the nearest matrix edge?
     int minEdge = (int)g_focusX;
     int t = (int)(MATRIX_W - 1) - (int)g_focusX; if (t < minEdge) minEdge = t;
@@ -607,7 +607,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   // Reactive "sphere of light" around the falling piece.
   // Border pixels near the active piece get a gentle brightness lift, slight desaturation,
   // and a tiny hue nudge (so it reads as interactive, but stays subtle).
-  if (g_focusActive && g_focusStrength) {
+  if (((level % 10) == 0) && g_focusActive && g_focusStrength) {
     int dx = (int)bx - (int)g_focusX;
     int dy = (int)by - (int)g_focusY;
     int d2 = dx * dx + dy * dy;
@@ -706,9 +706,21 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     g_hueOld = g_hueNew;
     g_firstRun = false;
   } else if (locked != g_prevLocked) {
-    g_hueOld = g_hueNew;
-    g_hueNew = rgbToHue(THEMES[tIdx][locked + 1]) + 32768;
-    g_wipeStartMs = nowMs;
+    // Update the boss-level wipe hues when a piece locks, but DON'T restart the
+    // wipe timer mid-flight. Restarting looks like a border 'glitch' when pieces
+    // lock quickly back-to-back.
+    const uint16_t newHue = rgbToHue(THEMES[tIdx][locked + 1]) + 32768;
+
+    const uint32_t WIPE_DUR_MS = 600;
+    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : WIPE_DUR_MS;
+
+    // If the previous wipe is done, start a fresh one; otherwise just retarget the
+    // 'new' hue and let the current wipe continue smoothly.
+    if (dt >= WIPE_DUR_MS) {
+      g_hueOld = g_hueNew;
+      g_wipeStartMs = nowMs;
+    }
+    g_hueNew = newHue;
     g_prevLocked = locked;
   }
 

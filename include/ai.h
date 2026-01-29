@@ -13,6 +13,12 @@ public:
   void setSkill(uint8_t s);
   uint8_t skill() const { return skill_; }
 
+  // 0..100 progress toward the *next* skill tier (if any).
+  // This lets the AI improve gradually with each "color bar" fill step on the
+  // MAX chase progress screen, while keeping the same major milestone steps.
+  void setSkillRampPct(uint8_t pct);
+  uint8_t skillRampPct() const { return skillRampPct_; }
+
   void reset();
   Actions think(const TetrisGame& g, uint32_t nowMs);
 
@@ -38,6 +44,7 @@ private:
 private:
   uint8_t profile_ = 1;
   uint8_t skill_ = (uint8_t)AI_SMARTNESS_BASE;
+  uint8_t skillRampPct_ = 0; // 0..100 toward (skill_ + 1)
 
   uint32_t lastPieceSeq_ = 0;
 
