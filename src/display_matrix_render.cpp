@@ -18,6 +18,23 @@ static uint16_t g_hueNew = 0;
 static uint32_t g_wipeStartMs = 0;
 static bool     g_firstRun = true;
 
+// Border clock: decoupled from real millis() so the border flow can
+// start slow and ramp up smoothly with level (never faster than original).
+static uint32_t g_borderClockQ16 = 0;        // Q16.16 scaled milliseconds
+static uint32_t g_borderClockLastRealMs = 0; // last real millis() used to advance the border clock
+static uint32_t g_borderNowMs = 0;           // current border clock in milliseconds
+
+static inline uint32_t borderSpeedQ16ForLevel(uint8_t level) {
+  if (level < 1) level = 1;
+  // Start slow, then ramp to 1.0 by this level.
+  // (Cap at 1.0 so it can never be faster than the original animation.)
+  static constexpr uint8_t  RAMP_MAX_LEVEL = 30;      // reach full speed by level 30
+  static constexpr uint32_t MIN_SPEED_Q16  = 6554u;   // ~0.10 in Q16.16
+  if (level >= RAMP_MAX_LEVEL) return 65536u;
+  const uint32_t tQ16 = (uint32_t)(level - 1) * 65536u / (uint32_t)(RAMP_MAX_LEVEL - 1);
+  return MIN_SPEED_Q16 + (uint32_t)(((uint64_t)(65536u - MIN_SPEED_Q16) * (uint64_t)tQ16) >> 16);
+}
+
 
 // Debug: force high-score border mode for testing
 static bool     g_debugForceHighScoreBorders = false;
@@ -354,6 +371,8 @@ uint32_t MatrixDisplay::scaleColor(uint32_t c, uint8_t alpha) const {
 uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const {
   uint16_t finalHue;
 
+  const uint32_t bt = g_borderNowMs;
+
   if (g_isFading) {
     uint32_t elapsed = nowMs - g_fadeStartMs;
     if (elapsed > g_fadeDuration) elapsed = g_fadeDuration;
@@ -377,11 +396,11 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
     finalHue = rgbToHue(targetC);
   } else {
     uint32_t duration = 600;
-    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : 0;
+    uint32_t dt = (bt >= g_wipeStartMs) ? (bt - g_wipeStartMs) : 0;
     uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
 
     uint16_t baseHue = (y < splitY) ? g_hueNew : g_hueOld;
-    uint16_t rawScroll = (uint16_t)((x + y) * 120 - (nowMs * 30));
+    uint16_t rawScroll = (uint16_t)((x + y) * 120 - (bt * 30));
     finalHue = baseHue + (rawScroll >> 5);
   }
 
@@ -395,7 +414,7 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   uint16_t baseHue = finalHue;
   if (g_highScoreRainbowMode) {
     baseHue = (uint16_t)(
-      (uint32_t)nowMs * 28UL +
+      (uint32_t)bt * 28UL +
       (uint32_t)x * 5200UL +
       (uint32_t)y * 3100UL
     );
@@ -404,7 +423,7 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
   uint32_t base = strip_.ColorHSV(baseHue, sat, val);
 
   // High-score mode: continuous rainbow irradiation from the falling piece.
-  if (g_highScoreRainbowMode && ((g.level() % 10) == 0) && g_focusActive && g_focusStrength) {
+  if (g_highScoreRainbowMode && g_focusActive && g_focusStrength) {
     // How close is the piece to the nearest matrix edge?
     int minEdge = (int)g_focusX;
     int t = (int)(MATRIX_W - 1) - (int)g_focusX; if (t < minEdge) minEdge = t;
@@ -435,10 +454,10 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
         return (v & 0x80) ? (uint8_t)(255 - ((v & 0x7F) << 1)) : (uint8_t)((v & 0x7F) << 1);
       };
 
-      const uint8_t wave = tri8((uint8_t)((dist * 20u - (uint32_t)(nowMs / 10u)) & 0xFF));
+      const uint8_t wave = tri8((uint8_t)((dist * 20u - (uint32_t)(bt / 10u)) & 0xFF));
 
       uint16_t hue = (uint16_t)(
-        (uint32_t)nowMs * 55UL +
+        (uint32_t)bt * 55UL +
         (uint32_t)dist * 11000UL +
         (uint32_t)x * 900UL +
         (uint32_t)y * 700UL
@@ -457,6 +476,9 @@ uint32_t MatrixDisplay::arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_
 
 uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t by, uint32_t nowMs) const {
   if (level < 1) level = 1;
+
+  const uint32_t bt = g_borderNowMs;
+  (void)nowMs; // border animation uses g_borderNowMs (scaled time)
 
   uint8_t ring = 0;
   if (bx < BOARD_OFFSET_X) ring = bx;
@@ -477,7 +499,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   if (bossThisLevel) {
     style = borderStyleForLevel((uint8_t)(level + 1));
     const uint32_t duration = 600;
-    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : 0;
+    uint32_t dt = (bt >= g_wipeStartMs) ? (bt - g_wipeStartMs) : 0;
     uint8_t splitY = (dt >= duration) ? MATRIX_H : (uint8_t)((dt * MATRIX_H) / duration);
     hue = (by < splitY) ? g_hueNew : g_hueOld;
   }
@@ -493,8 +515,8 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   };
 
   // Faster + stronger motion so it’s *obviously* animated
-  const uint8_t breathT = tri8((uint8_t)((nowMs >> 4) & 0xFF)); // ~4s
-  const uint8_t rippleT = tri8((uint8_t)(((nowMs >> 2) + (by * 29) + (bx * 13)) & 0xFF)); // ~1s drift
+  const uint8_t breathT = tri8((uint8_t)((bt >> 4) & 0xFF)); // ~4s
+  const uint8_t rippleT = tri8((uint8_t)(((bt >> 2) + (by * 29) + (bx * 13)) & 0xFF)); // ~1s drift
   const int breath = (int)breathT - 128;
   const int ripple = (int)rippleT - 128;
 
@@ -532,7 +554,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   if (style == 1) {
     // STYLE 1 (11-20): "Checkerboard Contrast" — alternating tiles brighten/dim.
     // Uses 2x2 tiles for a clear pattern on low resolution, with a slow phase flip.
-    const uint8_t phase = (uint8_t)((nowMs / 1200UL) & 1UL); // ~1.2s invert
+    const uint8_t phase = (uint8_t)((bt / 1200UL) & 1UL); // ~1.2s invert
     const bool on = ((((bx >> 1) ^ (by >> 1) ^ phase) & 1u) == 0u);
 
     if (on) {
@@ -558,7 +580,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
     }
   } else if (style == 2) {
     // STYLE 2 (21-30): "Sparkle twinkle" — occasional white glints that pop.
-    const uint32_t tick = (uint32_t)(nowMs / 170);
+    const uint32_t tick = (uint32_t)(bt / 170);
     const uint8_t h = hash8((uint32_t)level * 257u + (uint32_t)bx * 41u + (uint32_t)by * 97u + tick * 53u + (uint32_t)ring * 151u);
 
     // ~2–4 sparkles across the whole border at any given moment
@@ -569,7 +591,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
       val = (uint8_t)vv;
     } else {
       // Gentle scintillation (keeps it lively even when not sparkling)
-      const int shimmer = (int)tri8((uint8_t)(((nowMs >> 3) + (bx * 11) + (by * 7)) & 0xFF)) - 128;
+      const int shimmer = (int)tri8((uint8_t)(((bt >> 3) + (bx * 11) + (by * 7)) & 0xFF)) - 128;
       int dv2 = (shimmer * ((ring == 0) ? 10 : (ring == 1) ? 6 : 3)) / 128;
 
       int vv = (int)val + dv2;
@@ -579,8 +601,8 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
     }
   } else if (style == 3) {
     // STYLE 3 (31-40): "Wavy pulse" — a traveling wave that shifts brightness + hue.
-    const int wA = (int)tri8((uint8_t)(((nowMs >> 3) + (by * 13)) & 0xFF)) - 128;
-    const int wB = (int)tri8((uint8_t)(((nowMs >> 2) + (by * 7) + (bx * 19)) & 0xFF)) - 128;
+    const int wA = (int)tri8((uint8_t)(((bt >> 3) + (by * 13)) & 0xFF)) - 128;
+    const int wB = (int)tri8((uint8_t)(((bt >> 2) + (by * 7) + (bx * 19)) & 0xFF)) - 128;
 
     int dvw = (wA * ((ring == 0) ? 26 : (ring == 1) ? 18 : 6)) / 128 +
               (wB * ((ring == 0) ? 18 : (ring == 1) ? 12 : 4)) / 128;
@@ -656,7 +678,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
 
   // ✅ This is the “band” glint you were looking for
   if (ring == 0) {
-    uint8_t band = (uint8_t)(((nowMs / 22) + (bx * 9) + (by * 5)) & 0xFF);
+    uint8_t band = (uint8_t)(((bt / 22) + (bx * 9) + (by * 5)) & 0xFF);
 
     if (band < 34) {
       int boost = (34 - band) * 3;
@@ -670,7 +692,7 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
       val = (uint8_t)vv;
     }
   } else if (ring == 1) {
-    uint8_t band = (uint8_t)(((nowMs / 28) + (bx * 7) + (by * 4)) & 0xFF);
+    uint8_t band = (uint8_t)(((bt / 28) + (bx * 7) + (by * 4)) & 0xFF);
     if (band < 30) {
       int boost = (30 - band) * 2;
       int vv = (int)val + boost;
@@ -697,6 +719,16 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   strip_.clear();
 
   const uint8_t lvl = g.level();
+
+  // Update border time (smooth, uninterrupted). This ramps from slow -> current
+  // speed with level, but is capped so it can never run faster than the original.
+  uint32_t lastReal = g_borderClockLastRealMs;
+  if (lastReal == 0 || nowMs < lastReal) lastReal = nowMs;
+  const uint32_t dReal = nowMs - lastReal;
+  g_borderClockLastRealMs = nowMs;
+  const uint32_t spQ16 = borderSpeedQ16ForLevel(lvl);
+  g_borderClockQ16 += (uint64_t)dReal * (uint64_t)spQ16;
+  g_borderNowMs = (uint32_t)(g_borderClockQ16 >> 16);
   uint8_t tIdx = themeIndex(lvl);
   uint8_t locked = g.lastLockedPieceType();
 
@@ -704,6 +736,7 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     g_prevLocked = locked;
     g_hueNew = rgbToHue(THEMES[tIdx][locked + 1]) + 32768;
     g_hueOld = g_hueNew;
+    g_wipeStartMs = g_borderNowMs;
     g_firstRun = false;
   } else if (locked != g_prevLocked) {
     // Update the boss-level wipe hues when a piece locks, but DON'T restart the
@@ -712,13 +745,13 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
     const uint16_t newHue = rgbToHue(THEMES[tIdx][locked + 1]) + 32768;
 
     const uint32_t WIPE_DUR_MS = 600;
-    uint32_t dt = (nowMs >= g_wipeStartMs) ? (nowMs - g_wipeStartMs) : WIPE_DUR_MS;
+    uint32_t dt = (g_borderNowMs >= g_wipeStartMs) ? (g_borderNowMs - g_wipeStartMs) : WIPE_DUR_MS;
 
     // If the previous wipe is done, start a fresh one; otherwise just retarget the
     // 'new' hue and let the current wipe continue smoothly.
     if (dt >= WIPE_DUR_MS) {
       g_hueOld = g_hueNew;
-      g_wipeStartMs = nowMs;
+      g_wipeStartMs = g_borderNowMs;
     }
     g_hueNew = newHue;
     g_prevLocked = locked;
@@ -750,6 +783,44 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   g_highScoreRainbowMode = highScoreBorders;
   g_bossLevelActive = bossLevel;
   g_bossLevelNumber = lvl;
+
+
+  // Clearing state is needed for both playfield rendering and border glow behavior.
+  const bool clearing = g.isClearingLines();
+  const uint32_t elapsed = clearing ? g.clearingElapsedMs(nowMs) : 0;
+  const uint8_t alphaLin = g.clearingAlpha(nowMs);
+  const uint8_t alpha = (uint8_t)(((uint16_t)alphaLin * (uint16_t)alphaLin) >> 8);
+
+  // Compute a focus point from the current falling piece so borders can react to it.
+  // NOTE: This must happen BEFORE we render border pixels.
+  g_focusActive = false;
+  g_focusStrength = 0;
+  g_focusX = -1;
+  g_focusY = -1;
+  g_focusPieceId = 0;
+
+  if (!g.isGameOver() && !clearing) {
+    TetrisGame::Cell fcells[4];
+    uint8_t fn = 0;
+    g.getCurrentPieceBlocks(fcells, fn);
+
+    if (fn > 0) {
+      int sumx = 0;
+      int sumy = 0;
+      for (uint8_t i = 0; i < fn; i++) {
+        sumx += fcells[i].x;
+        sumy += fcells[i].y;
+      }
+
+      // Convert from board coords -> matrix coords
+      g_focusX = (int16_t)(BOARD_OFFSET_X + (sumx / (int)fn));
+      g_focusY = (int16_t)(BOARD_OFFSET_Y + (sumy / (int)fn));
+
+      g_focusActive = true;
+      g_focusStrength = 255;
+      g_focusPieceId = g.currentPieceId();
+    }
+  }
 
   int16_t wfFrontY = -999;
   if (g_waterfallActive) {
@@ -864,40 +935,6 @@ void MatrixDisplay::render(const TetrisGame& g, uint32_t nowMs) {
   }
 
   auto b = g.board();
-  const bool clearing = g.isClearingLines();
-  const uint32_t elapsed = clearing ? g.clearingElapsedMs(nowMs) : 0;
-  const uint8_t alphaLin = g.clearingAlpha(nowMs);
-  const uint8_t alpha = (uint8_t)(((uint16_t)alphaLin * (uint16_t)alphaLin) >> 8);
-
-  // Compute a focus point from the current falling piece so borders can react to it.
-  g_focusActive = false;
-  g_focusStrength = 0;
-  g_focusX = -1;
-  g_focusY = -1;
-  g_focusPieceId = 0;
-
-  if (!g.isGameOver() && !clearing) {
-    TetrisGame::Cell fcells[4];
-    uint8_t fn = 0;
-    g.getCurrentPieceBlocks(fcells, fn);
-
-    if (fn > 0) {
-      int sumx = 0;
-      int sumy = 0;
-      for (uint8_t i = 0; i < fn; i++) {
-        sumx += fcells[i].x;
-        sumy += fcells[i].y;
-      }
-
-      // Convert from board coords -> matrix coords
-      g_focusX = (int16_t)(BOARD_OFFSET_X + (sumx / (int)fn));
-      g_focusY = (int16_t)(BOARD_OFFSET_Y + (sumy / (int)fn));
-
-      g_focusActive = true;
-      g_focusStrength = 255;
-      g_focusPieceId = g.currentPieceId();
-    }
-  }
 
   for (uint8_t by = 0; by < BOARD_H; by++) {
     for (uint8_t bx = 0; bx < BOARD_W; bx++) {
