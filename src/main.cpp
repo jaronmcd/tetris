@@ -72,9 +72,16 @@ display.bootFlash(); // RGB Flash
     game.formatStorage(); // Wipe data
   }
 
-  // Boot: keep it minimal on the tiny display (MAX level only). Skippable.
+  #if BOOT_STATS_ENABLED
+  // Power-up: show the MAX-level "high screen" status (skippable).
+  display.showBootStats(game.maxLevel(), game.maxLevelChaseAttempts(), &bootAbort);
 
-  // Show boot stats (also skippable)// Small flush so the "skip" button doesn't also immediately move/drop on first frame.
+  // Re-sync timers after the blocking boot screen so the first tick doesn't "fast-forward".
+  game.debugResyncTimers(millis());
+  #endif
+
+
+  // Small flush so the "skip" button doesn't also immediately move/drop on first frame.
   for (int i = 0; i < 4; i++) {
     input.update();
     input.readActions();

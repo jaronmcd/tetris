@@ -58,3 +58,10 @@ notes.ai — running assistant notes (user-managed)
   but now it also ramps within the cycle based on the per-attempt "color bar" fill:
   - main.cpp computes a 0..100 ramp percentage from attempts%STEPS.
   - ai.cpp blends heuristic weights toward the next tier and smoothly ramps lookahead strength (especially while approaching skill>=3).
+
+2026-01-29
+- Added the MAX-level "high screen" status to the power-up sequence:
+  - main.cpp now calls MatrixDisplay::showBootStats(maxLevel, chaseAttempts) during setup when BOOT_STATS_ENABLED is true.
+  - BOOT_STATS_ENABLED default set to true in config.h (set false to skip this screen).
+  - After the blocking boot screen, setup re-syncs game timers via debugResyncTimers() so gameplay doesn't fast-forward.
+- Reliability tweak: showLevelNumberScreen()/showMaxLevelNumberScreen()/showBootLogo()/showNewMaxLevel() now tickPowerBrightness() each frame so brightness fades still progress when intros are skipped/disabled.

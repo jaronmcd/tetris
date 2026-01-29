@@ -59,8 +59,7 @@
 #define INTRO_MARQUEE_SPEED_MS_END 10
 
 // Boot stats (MAX level screen)
-#define BOOT_STATS_ENABLED false
-
+#define BOOT_STATS_ENABLED true
 // ======================
 // In-game UI
 // ======================
