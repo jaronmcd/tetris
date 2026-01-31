@@ -20,7 +20,7 @@
 // the USB-CDC serial port (helps avoid USB port current limits / glare during development).
 // NOTE: intentionally not MCU-USB-stack-specific; it keys off Serial being opened.
 #define USB_BRIGHTNESS_AUTO_ENABLED true
-#define USB_BRIGHTNESS_WHEN_HOST 15
+#define USB_BRIGHTNESS_WHEN_HOST 45
 #define USB_BRIGHTNESS_HOST_LATCH true
 
 // ======================
