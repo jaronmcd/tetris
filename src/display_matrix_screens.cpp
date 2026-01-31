@@ -278,7 +278,12 @@ bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t f
     tickPowerBrightness(millis());
 
     strip_.fill(bg);
-    drawNumberCentered(value, scale, fg);
+    // Match the MAX-level number styling: optional halo that can be configured
+    // as an additive glow or (preferably for diffuser grids) a directional
+    // drop shadow.
+    drawNumberCenteredHalo(value, scale, fg,
+                           (uint8_t)HIGH_SCREEN_HALO_ALPHA,
+                           (bool)HIGH_SCREEN_HALO_DARKEN);
     strip_.show();
     delay(25);
   }
