@@ -285,7 +285,7 @@ bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t f
   return false;
 }
 
-void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts) {
+void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts, uint32_t nowMs) {
 #if MAX_LEVEL_CHASE_PROGRESS_ENABLED
   uint16_t steps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
   if (steps < 1) steps = 1;
@@ -328,16 +328,64 @@ void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, ui
   uint32_t filled = ((uint32_t)inCycle * (uint32_t)MATRIX_H + (uint32_t)steps - 1u) / (uint32_t)steps;
   if (filled > MATRIX_H) filled = MATRIX_H;
 
+  // Optional subtle animation: a small moving highlight band across the filled
+  // region so the meter reads as "alive".
+  auto brightenTowardWhite = [&](uint32_t c, uint8_t alpha) -> uint32_t {
+    if (alpha == 0) return c;
+    uint8_t r = (uint8_t)((c >> 16) & 0xFF);
+    uint8_t g = (uint8_t)((c >> 8) & 0xFF);
+    uint8_t b = (uint8_t)(c & 0xFF);
+    r = (uint8_t)(r + (uint16_t)(255 - r) * alpha / 255);
+    g = (uint8_t)(g + (uint16_t)(255 - g) * alpha / 255);
+    b = (uint8_t)(b + (uint16_t)(255 - b) * alpha / 255);
+    return strip_.Color(r, g, b);
+  };
+
+  // Optional animation: sweep a subtle highlight band UP through the filled
+  // region so it visually communicates "progress" (bottom -> top).
+  int16_t hiRowFromBottom = -1;
+  int16_t hiRowFromBottom2 = -1;
+  uint32_t hiC = bgFill;
+  uint32_t hiC2 = bgFill;
+
+#if MAX_LEVEL_CHASE_PROGRESS_ANIM_ENABLED
+  {
+    const uint16_t speed = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_ANIM_SPEED_MS;
+    if (speed > 0 && filled > 0) {
+      // Add a small "gap" at the end so the sweep restart isn't a harsh jump
+      // on very small filled regions.
+      const uint16_t gap = (filled >= 4) ? 2u : 0u;
+      const uint16_t period = (uint16_t)filled + gap;
+      const uint16_t pos = (uint16_t)((nowMs / speed) % (uint32_t)period);
+
+      if (pos < filled) {
+        hiRowFromBottom = (int16_t)pos;
+        hiRowFromBottom2 = (pos > 0) ? (int16_t)(pos - 1) : -1;
+      }
+
+      hiC = brightenTowardWhite(bgFill, (uint8_t)MAX_LEVEL_CHASE_PROGRESS_ANIM_ALPHA);
+      hiC2 = brightenTowardWhite(bgFill, (uint8_t)MAX_LEVEL_CHASE_PROGRESS_ANIM_TAIL_ALPHA);
+    }
+  }
+#endif
+
   for (int16_t y = (int16_t)MATRIX_H - 1; y >= 0; y--) {
-    uint16_t rowFromBottom = (uint16_t)((MATRIX_H - 1) - (uint16_t)y);
-    if (rowFromBottom >= filled) break;
+    const uint16_t rowFromBottomU = (uint16_t)((MATRIX_H - 1) - (uint16_t)y);
+    if (rowFromBottomU >= filled) break;
+
+    uint32_t rowC = bgFill;
+    const int16_t rowFromBottom = (int16_t)rowFromBottomU;
+    if (rowFromBottom == hiRowFromBottom) rowC = hiC;
+    else if (rowFromBottom == hiRowFromBottom2) rowC = hiC2;
+
     for (uint8_t x = 0; x < MATRIX_W; x++) {
-      setPixel((int16_t)x, y, bgFill);
+      setPixel((int16_t)x, y, rowC);
     }
   }
 #else
   (void)chaseBg;
   (void)maxChaseAttempts;
+  (void)nowMs;
   strip_.fill(baseBg);
 #endif
 }
@@ -354,9 +402,10 @@ bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
   while ((millis() - start) < durationMs) {
     if (abortFn && abortFn()) return true;
 
-    tickPowerBrightness(millis());
+    uint32_t now = millis();
+    tickPowerBrightness(now);
 
-    fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts);
+    fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts, now);
     drawNumberCenteredHalo(value, scale, fg,
                            (uint8_t)HIGH_SCREEN_HALO_ALPHA,
                            (bool)HIGH_SCREEN_HALO_DARKEN);
@@ -851,24 +900,30 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     }
   };
 
-  auto drawTextAt = [&](int x) {
+  auto drawTextAt = [&](int x, uint32_t color) {
     strip_.clear();
     // center vertically; 7*scale fits within 16 (scale=2 => 14px)
     const int y0 = (MATRIX_H - (7 * (int)scale)) / 2;
     int cx = x;
-    const uint32_t c = strip_.Color(255, 255, 255);
     for (int i = 0; i < len; i++) {
-      drawScaledGlyph(text[i], cx, y0, c);
+      drawScaledGlyph(text[i], cx, y0, color);
       cx += charW;
     }
     strip_.show();
   };
 
+  const uint32_t white = strip_.Color(255, 255, 255);
+
+  // Track the last drawn X so we can end smoothly without "jumping" to a
+  // centered pose (which looks like a restart on small matrices).
+  int lastX = xStart;
+
   const int totalSteps = (xStart - xEnd) + 1;
   for (int step = 0; step < totalSteps; step++) {
     tickPowerBrightness(millis());
     const int x = xStart - step;
-    drawTextAt(x);
+    lastX = x;
+    drawTextAt(x, white);
 
     if (abortFn && abortFn()) return;
     if (millis() >= deadline) break;
@@ -878,15 +933,29 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     delay((uint32_t)(d < 1 ? 1 : d));
   }
 
-  // brief hold centered, then clear
-  tickPowerBrightness(millis());
-  drawTextAt((MATRIX_W - textW) / 2);
-  const uint32_t nowHold = (uint32_t)millis();
-  const uint32_t holdEnd = (deadline < (nowHold + 220U)) ? deadline : (nowHold + 220U);
-  while (millis() < holdEnd) {
-    tickPowerBrightness(millis());
+  // Smooth outro: brief hold on the *current* frame (no reposition/jump), then
+  // a short fade to black so the next intro phase doesn't feel abrupt.
+  {
+    const uint32_t nowHold = (uint32_t)millis();
+    const uint32_t holdEnd = (deadline < (nowHold + (uint32_t)INTRO_MARQUEE_END_HOLD_MS))
+                               ? deadline
+                               : (nowHold + (uint32_t)INTRO_MARQUEE_END_HOLD_MS);
+    while (millis() < holdEnd) {
+      tickPowerBrightness(millis());
+      if (abortFn && abortFn()) return;
+      delay(10);
+    }
+  }
+
+  // Quick fade-out (best-effort within remaining time).
+  for (uint8_t i = 0; i < (uint8_t)INTRO_MARQUEE_FADE_FRAMES; i++) {
     if (abortFn && abortFn()) return;
-    delay(10);
+    if (millis() >= deadline) break;
+    tickPowerBrightness(millis());
+    const uint8_t denom = (INTRO_MARQUEE_FADE_FRAMES <= 1) ? 1U : (uint8_t)(INTRO_MARQUEE_FADE_FRAMES - 1);
+    const uint8_t a = (uint8_t)(255 - (uint16_t)i * 255U / (uint16_t)denom);
+    drawTextAt(lastX, scaleColor(white, a));
+    delay((uint32_t)INTRO_MARQUEE_FADE_FRAME_MS);
   }
 
   tickPowerBrightness(millis());

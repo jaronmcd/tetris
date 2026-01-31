@@ -57,6 +57,10 @@
 // Marquee speed ramps from START to END as it progresses
 #define INTRO_MARQUEE_SPEED_MS_START 26
 #define INTRO_MARQUEE_SPEED_MS_END 10
+// Marquee outro (prevents a visible "jump" at the end on small matrices)
+#define INTRO_MARQUEE_END_HOLD_MS 120
+#define INTRO_MARQUEE_FADE_FRAMES 8
+#define INTRO_MARQUEE_FADE_FRAME_MS 18
 
 // Boot stats (MAX level screen)
 #define BOOT_STATS_ENABLED true
@@ -115,6 +119,19 @@
 // Number of "steps" to fill before the MAX background is fully the new color.
 // On a 16x16 matrix, 16 steps = 1 row per attempt.
 #define MAX_LEVEL_CHASE_PROGRESS_STEPS 16
+
+// Subtle animation on the MAX chase progress fill so it reads as an active
+// progress meter (even when attempts are static during the short boot/game-over
+// screens).
+//
+// This is *purely visual*: it does not affect the stored attempt counter.
+#define MAX_LEVEL_CHASE_PROGRESS_ANIM_ENABLED true
+// How fast the highlight band sweeps UP through the filled region (milliseconds per row).
+#define MAX_LEVEL_CHASE_PROGRESS_ANIM_SPEED_MS 90
+// Strength of the moving highlight (0..255). Subtle range: ~20–70.
+#define MAX_LEVEL_CHASE_PROGRESS_ANIM_ALPHA 45
+// Optional trailing softer row behind the highlight (0..255).
+#define MAX_LEVEL_CHASE_PROGRESS_ANIM_TAIL_ALPHA 20
 
 
 // ======================

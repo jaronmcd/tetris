@@ -76,7 +76,7 @@ bool showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t dur
 
 // MAX-level screens can optionally show a "record chase" progress meter in the
 // background based on the persistent attempt counter.
-void fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts);
+void fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts, uint32_t nowMs);
 bool showMaxLevelNumberScreen(uint8_t value,
                               uint32_t baseBg, uint32_t chaseBg,
                               uint16_t maxChaseAttempts,
