@@ -68,7 +68,10 @@ private:
 // Minimal numeric screens (no labels / no score)
 uint32_t dimColor(uint32_t c, uint8_t alpha) const;
 void drawDigit5x7Scaled(uint8_t digit, int16_t x, int16_t y, uint8_t scale, uint32_t color);
+void drawDigit5x7ScaledHalo(uint8_t digit, int16_t x, int16_t y, uint8_t scale,
+                            uint32_t color, uint8_t haloAlpha, bool darken, uint8_t* haloMask);
 void drawNumberCentered(uint8_t value, uint8_t scale, uint32_t color);
+void drawNumberCenteredHalo(uint8_t value, uint8_t scale, uint32_t color, uint8_t haloAlpha, bool darken);
 bool showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t durationMs, AbortFn abortFn);
 
 // MAX-level screens can optionally show a "record chase" progress meter in the

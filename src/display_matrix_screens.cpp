@@ -44,6 +44,144 @@ void MatrixDisplay::drawDigit5x7Scaled(uint8_t digit, int16_t x, int16_t y, uint
   }
 }
 
+// Adds a subtle contrast effect around a digit.
+// - darken=false: additive glow so the effect inherits the background hue.
+// - darken=true: directional drop shadow by darkening the digit mask at an offset.
+// - Uses a per-call mask so we don't "stack" modifications repeatedly in the same frame.
+void MatrixDisplay::drawDigit5x7ScaledHalo(uint8_t digit, int16_t x, int16_t y, uint8_t scale,
+                                          uint32_t color, uint8_t haloAlpha, bool darken, uint8_t* haloMask) {
+  if (digit > 9) return;
+  if (!haloMask || haloAlpha == 0) {
+    // No halo, just draw the digit.
+    drawDigit5x7Scaled(digit, x, y, scale, color);
+    return;
+  }
+
+  const uint8_t* cols = DIGITS_5x7[digit];
+
+  const uint32_t haloAdd = dimColor(color, haloAlpha);
+
+  auto darkenAt = [&](int16_t gx, int16_t gy, uint8_t alpha) {
+    if (gx < 0 || gx >= (int16_t)MATRIX_W || gy < 0 || gy >= (int16_t)MATRIX_H) return;
+    const uint16_t mi = (uint16_t)((uint16_t)gy * (uint16_t)MATRIX_W + (uint16_t)gx);
+    if (haloMask[mi]) return;
+    haloMask[mi] = 1;
+
+    const uint16_t idx = XY((uint8_t)gx, (uint8_t)gy);
+    uint32_t old = strip_.getPixelColor(idx);
+    uint8_t or_ = (uint8_t)((old >> 16) & 0xFF);
+    uint8_t og_ = (uint8_t)((old >> 8) & 0xFF);
+    uint8_t ob_ = (uint8_t)(old & 0xFF);
+
+    // Blend toward black by scaling the current pixel down.
+    const uint16_t factor = (uint16_t)(255 - alpha); // 0..255
+    uint8_t nr = (uint8_t)((uint16_t)or_ * factor / 255);
+    uint8_t ng = (uint8_t)((uint16_t)og_ * factor / 255);
+    uint8_t nb = (uint8_t)((uint16_t)ob_ * factor / 255);
+    strip_.setPixelColor(idx, strip_.Color(nr, ng, nb));
+  };
+
+  auto glowAt = [&](int16_t gx, int16_t gy) {
+    if (gx < 0 || gx >= (int16_t)MATRIX_W || gy < 0 || gy >= (int16_t)MATRIX_H) return;
+    const uint16_t mi = (uint16_t)((uint16_t)gy * (uint16_t)MATRIX_W + (uint16_t)gx);
+    if (haloMask[mi]) return;
+    haloMask[mi] = 1;
+
+    const uint16_t idx = XY((uint8_t)gx, (uint8_t)gy);
+    uint32_t old = strip_.getPixelColor(idx);
+    uint8_t or_ = (uint8_t)((old >> 16) & 0xFF);
+    uint8_t og_ = (uint8_t)((old >> 8) & 0xFF);
+    uint8_t ob_ = (uint8_t)(old & 0xFF);
+
+    // Additive glow: brighten the current pixel (clamped).
+    uint16_t r = (uint16_t)or_ + (uint16_t)((haloAdd >> 16) & 0xFF);
+    uint16_t g = (uint16_t)og_ + (uint16_t)((haloAdd >> 8) & 0xFF);
+    uint16_t b = (uint16_t)ob_ + (uint16_t)(haloAdd & 0xFF);
+
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+
+    strip_.setPixelColor(idx, strip_.Color((uint8_t)r, (uint8_t)g, (uint8_t)b));
+  };
+
+  if (darken) {
+    // Directional drop shadow: darken a shifted copy of the digit mask, then
+    // draw the digit on top. This tends to read much better through diffuser
+    // grids than a 1px outline.
+    const int8_t offX = (int8_t)HIGH_SCREEN_SHADOW_OFFSET_X;
+    const int8_t offY = (int8_t)HIGH_SCREEN_SHADOW_OFFSET_Y;
+    const uint8_t softA = (uint8_t)HIGH_SCREEN_SHADOW_SOFT_ALPHA;
+
+    // Core shadow pass.
+    for (int col = 0; col < 5; col++) {
+      uint8_t bits = cols[col];
+      for (int row = 0; row < 7; row++) {
+        if (!((bits >> row) & 1)) continue;
+
+        for (uint8_t sy = 0; sy < scale; sy++) {
+          for (uint8_t sx = 0; sx < scale; sx++) {
+            const int16_t px = (int16_t)(x + (int16_t)(col * scale) + (int16_t)sx);
+            const int16_t py = (int16_t)(y + (int16_t)(row * scale) + (int16_t)sy);
+            darkenAt((int16_t)(px + offX), (int16_t)(py + offY), haloAlpha);
+          }
+        }
+      }
+    }
+
+    // Optional soft edge: extend the shadow slightly further in the same
+    // direction to simulate a tiny blur.
+    if (softA > 0) {
+      for (int col = 0; col < 5; col++) {
+        uint8_t bits = cols[col];
+        for (int row = 0; row < 7; row++) {
+          if (!((bits >> row) & 1)) continue;
+
+          for (uint8_t sy = 0; sy < scale; sy++) {
+            for (uint8_t sx = 0; sx < scale; sx++) {
+              const int16_t px = (int16_t)(x + (int16_t)(col * scale) + (int16_t)sx);
+              const int16_t py = (int16_t)(y + (int16_t)(row * scale) + (int16_t)sy);
+
+              // One extra pixel of spread in the shadow direction.
+              darkenAt((int16_t)(px + offX + (offX >= 0 ? 1 : -1)), (int16_t)(py + offY), softA);
+              darkenAt((int16_t)(px + offX), (int16_t)(py + offY + (offY >= 0 ? 1 : -1)), softA);
+              darkenAt((int16_t)(px + offX + (offX >= 0 ? 1 : -1)), (int16_t)(py + offY + (offY >= 0 ? 1 : -1)), softA);
+            }
+          }
+        }
+      }
+    }
+
+    drawDigit5x7Scaled(digit, x, y, scale, color);
+    return;
+  }
+
+  // Glow pass: for every "on" pixel of the scaled digit, brighten its 8-neighborhood.
+  for (int col = 0; col < 5; col++) {
+    uint8_t bits = cols[col];
+    for (int row = 0; row < 7; row++) {
+      if (!((bits >> row) & 1)) continue;
+
+      for (uint8_t sy = 0; sy < scale; sy++) {
+        for (uint8_t sx = 0; sx < scale; sx++) {
+          const int16_t px = (int16_t)(x + (int16_t)(col * scale) + (int16_t)sx);
+          const int16_t py = (int16_t)(y + (int16_t)(row * scale) + (int16_t)sy);
+
+          for (int8_t dy = -1; dy <= 1; dy++) {
+            for (int8_t dx = -1; dx <= 1; dx++) {
+              if (dx == 0 && dy == 0) continue;
+              glowAt((int16_t)(px + dx), (int16_t)(py + dy));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Digit pass (crisp on top of the halo)
+  drawDigit5x7Scaled(digit, x, y, scale, color);
+}
+
 void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t color) {
   if (value > 99) value = 99;
 
@@ -83,6 +221,51 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
     drawDigit5x7Scaled(d1, (int16_t)(startX + digitW + spacing), startY, s, color);
   }
 
+}
+
+void MatrixDisplay::drawNumberCenteredHalo(uint8_t value, uint8_t scale, uint32_t color, uint8_t haloAlpha, bool darken) {
+  if (haloAlpha == 0) {
+    drawNumberCentered(value, scale, color);
+    return;
+  }
+
+  if (value > 99) value = 99;
+
+  uint8_t d0 = (uint8_t)(value / 10);
+  uint8_t d1 = (uint8_t)(value % 10);
+  const bool twoDigits = (value >= 10);
+
+  // Match drawNumberCentered's auto-fit behavior.
+  uint8_t s = (scale < 1) ? 1 : scale;
+  while (s > 1) {
+    const int digitW = 5 * s;
+    const int digitH = 7 * s;
+    const int spacing = s;
+    const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
+    if (totalW <= MATRIX_W && digitH <= MATRIX_H) break;
+    s--;
+  }
+
+  const int digitW = 5 * s;
+  const int digitH = 7 * s;
+  const int spacing = s;
+  const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
+
+  int16_t startX = (int16_t)((MATRIX_W - totalW) / 2);
+  int16_t startY = (int16_t)((MATRIX_H - digitH) / 2);
+
+  if (startX < 0) startX = 0;
+  if (startY < 0) startY = 0;
+
+  // Per-frame mask so a halo pixel is only modified once.
+  uint8_t mask[MATRIX_W * MATRIX_H] = {};
+
+  if (!twoDigits) {
+    drawDigit5x7ScaledHalo(d1, startX, startY, s, color, haloAlpha, darken, mask);
+  } else {
+    drawDigit5x7ScaledHalo(d0, startX, startY, s, color, haloAlpha, darken, mask);
+    drawDigit5x7ScaledHalo(d1, (int16_t)(startX + digitW + spacing), startY, s, color, haloAlpha, darken, mask);
+  }
 }
 
 bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t durationMs, AbortFn abortFn) {
@@ -174,7 +357,9 @@ bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
     tickPowerBrightness(millis());
 
     fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts);
-    drawNumberCentered(value, scale, fg);
+    drawNumberCenteredHalo(value, scale, fg,
+                           (uint8_t)HIGH_SCREEN_HALO_ALPHA,
+                           (bool)HIGH_SCREEN_HALO_DARKEN);
     strip_.show();
     delay(25);
   }

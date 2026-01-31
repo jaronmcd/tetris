@@ -60,6 +60,29 @@
 
 // Boot stats (MAX level screen)
 #define BOOT_STATS_ENABLED true
+
+// Contrast effect around the MAX-level ("high screen") digits.
+//
+// HIGH_SCREEN_HALO_ALPHA: 0 = off, 255 = very strong.
+// - If HIGH_SCREEN_HALO_DARKEN is false: a *glow* is added by brightening the
+//   pixels around the digits (additive, inherits background hue).
+// - If HIGH_SCREEN_HALO_DARKEN is true: a *drop shadow* is created by darkening
+//   the digit shape at an offset (more visible on diffuser/grid panels).
+//
+// For a subtle glow try 40–90.
+// For a readable drop shadow on LED matrices, 130–190 works well.
+#define HIGH_SCREEN_HALO_ALPHA 160
+#define HIGH_SCREEN_HALO_DARKEN true
+
+// Drop-shadow tuning (only used when HIGH_SCREEN_HALO_DARKEN is true)
+// Offset of the shadow relative to the digit (1,1 = down-right).
+#define HIGH_SCREEN_SHADOW_OFFSET_X 1
+#define HIGH_SCREEN_SHADOW_OFFSET_Y 1
+// Optional soft edge (0 = hard shadow only).
+#define HIGH_SCREEN_SHADOW_SOFT_ALPHA 60
+
+// Back-compat alias (older builds used HIGH_SCREEN_GLOW_ALPHA)
+#define HIGH_SCREEN_GLOW_ALPHA HIGH_SCREEN_HALO_ALPHA
 // ======================
 // In-game UI
 // ======================
