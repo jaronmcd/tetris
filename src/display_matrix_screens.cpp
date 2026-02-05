@@ -404,6 +404,32 @@ bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
   const uint8_t scale = 1;
   const uint32_t start = millis();
 
+  // "AI level-up rollovers" == number of times the MAX chase progress meter
+  // has fully filled and wrapped back to 0.
+  //
+  // Instead of drawing a number, render it as a tiny "LED counter":
+  // - Fill pixels from bottom-left -> right, then up a row as needed.
+  // - The NEXT pixel (upcoming rollover) gently pulses to hint progress,
+  //   and the pulse speeds up slightly as it approaches the next rollover.
+  uint16_t chaseSteps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
+  if (chaseSteps < 1) chaseSteps = 1;
+
+  const uint32_t aiRolloverCount = (uint32_t)maxChaseAttempts / (uint32_t)chaseSteps;
+  const uint16_t aiInCycle = (uint16_t)(maxChaseAttempts % chaseSteps);
+
+  // Keep the MAX digits readable by reserving a small band at the bottom.
+  // (On a 16x16 matrix, 5 rows gives 80 pixels of "rollover history".)
+  const uint8_t rolloverRows = (MATRIX_H < 5) ? (uint8_t)MATRIX_H : 5;
+  const uint16_t rolloverPixels = (uint16_t)MATRIX_W * (uint16_t)rolloverRows;
+
+  const uint16_t aiRolloverSolid = (aiRolloverCount >= (uint32_t)rolloverPixels)
+                                    ? rolloverPixels
+                                    : (uint16_t)aiRolloverCount;
+  const bool aiRolloverFull = (aiRolloverCount >= (uint32_t)rolloverPixels);
+
+  // Slightly dimmer than the main digits so the MAX number still reads as primary.
+  const uint32_t aiRolloverSolidColor = dimColor(fg, 180);
+
   while ((millis() - start) < durationMs) {
     if (abortFn && abortFn()) return true;
 
@@ -414,6 +440,62 @@ bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
     drawNumberCenteredHalo(value, scale, fg,
                            (uint8_t)HIGH_SCREEN_HALO_ALPHA,
                            (bool)HIGH_SCREEN_HALO_DARKEN);
+
+    // Bottom band: AI "level-up rollover" meter (LED counter).
+    // Fills pixels from bottom-left -> right, then up a row as needed.
+    //
+    // Animation hint:
+    // - If we're partway to the next rollover, the NEXT pixel pulses.
+    // - If we've saturated the visible range, the LAST pixel pulses to imply "80+".
+    for (uint16_t i = 0; i < aiRolloverSolid; i++) {
+      int16_t x = (int16_t)(i % MATRIX_W);
+      int16_t y = (int16_t)((MATRIX_H - 1) - (i / MATRIX_W));
+      setPixel(x, y, aiRolloverSolidColor);
+    }
+
+    if (!aiRolloverFull && aiInCycle > 0 && chaseSteps > 1) {
+      const uint16_t idx = aiRolloverSolid;
+      int16_t x = (int16_t)(idx % MATRIX_W);
+      int16_t y = (int16_t)((MATRIX_H - 1) - (idx / MATRIX_W));
+
+      // Progress (0..255) toward the next rollover.
+      const uint16_t denom = (chaseSteps > 1) ? (uint16_t)(chaseSteps - 1) : 1;
+      const uint16_t inC = (aiInCycle > denom) ? denom : aiInCycle;
+      const uint8_t prog = (uint8_t)((uint32_t)inC * 255u / denom);
+
+      // Pulse period shrinks as we get closer to the rollover (subtle urgency).
+      const uint16_t periodMax = 720;
+      const uint16_t periodMin = 220;
+      const uint16_t period = (uint16_t)(periodMax - (uint32_t)prog * (periodMax - periodMin) / 255u);
+
+      const uint16_t t = (uint16_t)(now % (uint32_t)period);
+      const uint16_t half = (period / 2u) ? (period / 2u) : 1u;
+      const uint16_t tri = (t < half) ? t : (period - t);
+      const uint8_t tri255 = (uint8_t)((uint32_t)tri * 255u / half);
+
+      // Brightness pulse strength increases with progress.
+      const uint16_t baseA = 18u + (uint16_t)prog * 28u / 255u;  // 18..46
+      const uint16_t ampA  = 35u + (uint16_t)prog * 200u / 255u; // 35..235
+      uint16_t a = baseA + (uint32_t)tri255 * ampA / 255u;
+      if (a > 255u) a = 255u;
+
+      setPixel(x, y, dimColor(fg, (uint8_t)a));
+    } else if (aiRolloverFull && rolloverPixels > 0) {
+      // Saturated: pulse the last pixel to imply "and more".
+      const uint16_t idx = (uint16_t)(rolloverPixels - 1u);
+      int16_t x = (int16_t)(idx % MATRIX_W);
+      int16_t y = (int16_t)((MATRIX_H - 1) - (idx / MATRIX_W));
+
+      const uint16_t period = 650;
+      const uint16_t t = (uint16_t)(now % (uint32_t)period);
+      const uint16_t half = period / 2u;
+      const uint16_t tri = (t < half) ? t : (period - t);
+      const uint8_t tri255 = (uint8_t)((uint32_t)tri * 255u / half);
+
+      const uint8_t a = (uint8_t)(180u + (uint16_t)tri255 * 75u / 255u); // 180..255
+      setPixel(x, y, dimColor(fg, a));
+    }
+
     strip_.show();
     delay(25);
   }
