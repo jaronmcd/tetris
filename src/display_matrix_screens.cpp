@@ -1,6 +1,11 @@
 #include "display_matrix.h"
 #include <Arduino.h>
 
+// ESP32 has a hardware RNG we can use for truly random boot intros.
+#if defined(ARDUINO_ARCH_ESP32)
+#include "esp_system.h" // esp_random()
+#endif
+
 // Local 5x7 thin-line digit font for numeric screens (columns, LSB=top row).
 static const uint8_t DIGITS_5x7[10][5] = {
   {0x3E, 0x41, 0x41, 0x41, 0x3E}, // 0
@@ -767,8 +772,13 @@ void MatrixDisplay::showIntroDropFill(uint32_t maxDurationMs, AbortFn abortFn) {
     strip_.show();
   };
 
-  // Seed RNG lightly (portable; avoids MCU-specific calls).
-  randomSeed((uint32_t)micros());
+  // Seed RNG for Arduino's random(). On ESP32 we can mix in the hardware RNG
+  // so the intro pattern isn't repeatable from boot-to-boot.
+  #if defined(ARDUINO_ARCH_ESP32)
+    randomSeed((uint32_t)(esp_random() ^ (uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+  #else
+    randomSeed((uint32_t)((uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+  #endif
 
   // Drop pieces until filled or time.
   while (millis() < deadline && filledCount < (MATRIX_W * MATRIX_H)) {
