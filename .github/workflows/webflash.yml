@@ -3,6 +3,8 @@ name: Web Flasher (ESP32-S3)
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -44,14 +46,17 @@ jobs:
         run: pio run -e esp32-s3-4mb
 
       - name: Build web flash site
+        if: github.event_name != 'pull_request'
         run: python scripts/ci/build_webflash_site.py --env esp32-s3-4mb --out site --version "${{ github.sha }}"
 
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

@@ -19,7 +19,7 @@ void InputManager::begin() {
   BP32.enableNewBluetoothConnections(true);
 
   // Uncomment once if you want to force re-pairing during testing:
-  // BP32.forgetBluetoothKeys();
+  BP32.forgetBluetoothKeys();
 }
 
 void InputManager::update() {
