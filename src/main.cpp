@@ -50,6 +50,9 @@ void setup() {
   Serial.begin(115200);
   delay(30);
 
+  // Initialize input before boot screens so bootAbort() can safely poll buttons.
+  input.begin();
+
   display.begin();
 
   // Boot title: big scrolling text (skippable)
@@ -63,8 +66,6 @@ void setup() {
   #endif
 
 display.bootFlash(); // RGB Flash
-
-  input.begin();
   game.begin(); // Loads HS from memory
 
   // CONFIG TOGGLE TO WIPE DATA
