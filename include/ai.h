@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "actions.h"
 #include "tetris.h"
+#include "breakout.h"
 
 class TetrisAI {
 public:
@@ -57,4 +58,25 @@ private:
   uint32_t nextDownToggleMs_ = 0;
 
   Plan plan_;
+};
+
+class BreakoutAI {
+public:
+  // 0=slow, 1=normal, 2=fast, 3=turbo(test)
+  void setProfile(uint8_t p);
+  uint8_t profile() const { return profile_; }
+
+  void reset();
+  Actions think(const BreakoutGame& g, uint32_t nowMs);
+
+private:
+  uint8_t predictTargetX(const BreakoutGame& g) const;
+  uint32_t jitterMs(uint32_t base, uint32_t spread) const;
+  uint32_t scaleMs(uint32_t v) const;
+
+private:
+  uint8_t profile_ = 1;
+  uint32_t nextStepMs_ = 0;
+  uint32_t launchAtMs_ = 0;
+  uint32_t gameOverRestartMs_ = 0;
 };

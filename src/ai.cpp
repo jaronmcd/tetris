@@ -599,3 +599,145 @@ Actions TetrisAI::think(const TetrisGame& g, uint32_t nowMs) {
 
   return a;
 }
+
+void BreakoutAI::setProfile(uint8_t p) {
+  if (p > 3) p = 3;
+  profile_ = p;
+  reset();
+}
+
+void BreakoutAI::reset() {
+  nextStepMs_ = 0;
+  launchAtMs_ = 0;
+  gameOverRestartMs_ = 0;
+}
+
+uint32_t BreakoutAI::jitterMs(uint32_t base, uint32_t spread) const {
+  uint32_t r = esp_random();
+  int32_t j = (int32_t)(r % (spread * 2 + 1u)) - (int32_t)spread;
+  int32_t v = (int32_t)base + j;
+  if (v < 0) v = 0;
+  return (uint32_t)v;
+}
+
+uint32_t BreakoutAI::scaleMs(uint32_t v) const {
+  // 0 slow, 1 normal, 2 fast, 3 turbo
+  static const uint16_t num[4] = {16, 10, 7, 35};
+  static const uint16_t den[4] = {10, 10, 10, 100};
+  uint8_t p = profile_;
+  if (p > 3) p = 3;
+  uint32_t out = (v * (uint32_t)num[p]) / (uint32_t)den[p];
+  if (out < 5) out = 5;
+  return out;
+}
+
+uint8_t BreakoutAI::predictTargetX(const BreakoutGame& g) const {
+  int16_t x = g.ballXQ8();
+  int16_t y = g.ballYQ8();
+  int16_t vx = g.ballVelXQ8();
+  int16_t vy = g.ballVelYQ8();
+
+  if (vx == 0 && vy == 0) return g.ballX();
+  if (vy == 0) vy = 96;
+
+  const int16_t minXQ8 = 0;
+  const int16_t maxXQ8 = (int16_t)((MATRIX_W - 1) << 8);
+  const int16_t minYQ8 = 0;
+  const int16_t paddleInterceptYQ8 = (int16_t)((BreakoutGame::PADDLE_Y - 1) << 8);
+
+  for (uint16_t i = 0; i < 320; i++) {
+    x = (int16_t)(x + vx);
+    y = (int16_t)(y + vy);
+
+    if (x < minXQ8) {
+      x = minXQ8;
+      vx = (int16_t)-vx;
+    } else if (x > maxXQ8) {
+      x = maxXQ8;
+      vx = (int16_t)-vx;
+    }
+
+    if (y < minYQ8) {
+      y = minYQ8;
+      vy = (int16_t)-vy;
+    }
+
+    if (vy > 0 && y >= paddleInterceptYQ8) break;
+  }
+
+  int16_t px = (int16_t)((x + 128) >> 8);
+  if (px < 0) px = 0;
+  if (px > (MATRIX_W - 1)) px = (MATRIX_W - 1);
+  return (uint8_t)px;
+}
+
+Actions BreakoutAI::think(const BreakoutGame& g, uint32_t nowMs) {
+  Actions a;
+
+  if (g.isGameOver()) {
+    if (gameOverRestartMs_ == 0) {
+      gameOverRestartMs_ = nowMs + scaleMs(jitterMs(700, 300));
+    }
+    if (nowMs >= gameOverRestartMs_) {
+      a.drop = true;
+      gameOverRestartMs_ = nowMs + scaleMs(jitterMs(800, 250));
+    }
+    return a;
+  }
+  gameOverRestartMs_ = 0;
+
+  const int16_t halfW = (int16_t)((g.paddleWidth() - 1) / 2);
+  const int16_t maxLeft = (int16_t)(MATRIX_W - g.paddleWidth());
+
+  if (g.waitingLaunch()) {
+    // Stage launches from roughly center so openings are safer.
+    int16_t desiredLeft = (int16_t)(MATRIX_W / 2) - halfW;
+    if (desiredLeft < 0) desiredLeft = 0;
+    if (desiredLeft > maxLeft) desiredLeft = maxLeft;
+
+    if (nowMs >= nextStepMs_) {
+      if (g.paddleX() < desiredLeft) {
+        a.right = true;
+        nextStepMs_ = nowMs + scaleMs(jitterMs(95, 30));
+        return a;
+      }
+      if (g.paddleX() > desiredLeft) {
+        a.left = true;
+        nextStepMs_ = nowMs + scaleMs(jitterMs(95, 30));
+        return a;
+      }
+    }
+
+    if (launchAtMs_ == 0) {
+      launchAtMs_ = nowMs + scaleMs(jitterMs(480, 180));
+    }
+    if (nowMs >= launchAtMs_) {
+      a.rotate = true;
+      launchAtMs_ = 0;
+      nextStepMs_ = nowMs + scaleMs(jitterMs(130, 40));
+    }
+    return a;
+  }
+  launchAtMs_ = 0;
+
+  if (nowMs < nextStepMs_) return a;
+
+  uint8_t targetX = predictTargetX(g);
+  int16_t desiredLeft = (int16_t)targetX - halfW;
+  if (desiredLeft < 0) desiredLeft = 0;
+  if (desiredLeft > maxLeft) desiredLeft = maxLeft;
+
+  if ((int16_t)g.paddleX() < desiredLeft) {
+    a.right = true;
+    nextStepMs_ = nowMs + scaleMs(jitterMs(85, 25));
+    return a;
+  }
+  if ((int16_t)g.paddleX() > desiredLeft) {
+    a.left = true;
+    nextStepMs_ = nowMs + scaleMs(jitterMs(85, 25));
+    return a;
+  }
+
+  nextStepMs_ = nowMs + scaleMs(jitterMs(60, 20));
+  return a;
+}

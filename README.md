@@ -1,11 +1,13 @@
 # ESP32 NeoPixel Tetris (16×16) 
 
-A tiny, self-contained **Tetris** for an **ESP32** driving a **16×16 NeoPixel/WS2812 matrix**.
+A tiny, self-contained **arcade bundle** for an **ESP32** driving a **16×16 NeoPixel/WS2812 matrix**.
 
-- **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
+- Game menu with **2 games**: **Tetris** and **Breakout**
+- Persistent boot mode: boots directly into the last selected game (**default: Tetris**)
+- **Tetris** uses a **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
 - **Bluetooth gamepad support** via **Bluepad32** (D‑pad + buttons)
 - **Idle → AI demo mode** (kicks in after a few seconds with no input)
-- Persistent **High Score** + **High Level** stored in ESP32 **NVS/Preferences**
+- Independent persistent highscores for **Tetris** and **Breakout** (ESP32 **NVS/Preferences**)
 - Animated, level-based **border themes** that **react to the falling piece** (subtle “sphere of light”)
 - Boot splash + skippable boot stats screen
 
@@ -126,22 +128,48 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 
 ## Controls
 
+### Game menu (while paused)
+
+- Hold **SELECT/BACK/SHARE** for ~3 seconds while paused to open the game menu
+- **Left / Right**: choose game
+- **A / B / START**: launch selected game
+- Selected game becomes the new persistent boot mode
+- **Serial:** `W` / `Space` / `R` also launch from the menu
+
 ### Bluetooth gamepad (Bluepad32)
+
+#### Tetris
 
 - **D‑pad Left/Right**: move
 - **D‑pad Down (hold)**: soft drop
 - **A**: rotate
 - **B**: hard drop
 - **START**: pause/resume (screen dims while paused)
-- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to reset and return to intro screens
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to open the game menu
+
+#### Breakout
+
+- **D‑pad Left/Right**: move paddle
+- **A / B / D‑pad Down**: launch ball (and restart after game over)
+- **START**: pause/resume
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds to open the game menu
+- Idle for a few seconds to enable **Breakout AI demo mode** (any input returns to human control)
 
 ### Serial keyboard (via monitor)
+
+#### Tetris
 
 - **A / D**: move left/right
 - **W**: rotate
 - **S (hold)**: soft drop
 - **Space**: hard drop
 - **R**: restart
+
+#### Breakout
+
+- **A / D**: move paddle
+- **W / Space / S**: launch ball (and restart after game over)
+- **R**: return to game menu
 
 ---
 
@@ -159,7 +187,7 @@ These are handy for quickly testing animations without playing a full game:
 - **t** → preview **game over** (forced tie/record style)
 - **m** → preview **new MAX level celebration**
 - **g** → preview **MAX chase progress** (cycles fill + colors)
-- **0 / 1 / 2 / 3** → set AI speed profile (slow → turbo)
+- **0 / 1 / 2 / 3** → set AI speed profile (slow → turbo) for both Tetris and Breakout demos
 
 The firmware prints a reminder of these keys on boot over Serial.
 
@@ -210,11 +238,20 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 - `pg` = has-played flag (used to gate "chasing the record" FX)
 - `ma` = MAX-level chase attempts counter (completed record-eligible runs since `ml` was last updated)
 
+Breakout records are stored independently in namespace `breakout`:
+
+- `hs` = Breakout high score
+
+Boot mode preference is stored in namespace `arcade`:
+
+- `bootm` = selected boot mode (`0`=Tetris, `1`=Breakout)
+
 ---
 
 ## How It Works (Project Layout)
 
-- `src/main.cpp` – boot flow, demo AI mode, main loop
+- `src/main.cpp` – boot flow, game-select menu, mode switching, main loop
+- `src/breakout.cpp` – Breakout rules, paddle/ball physics, brick field, lives
 - `src/tetris.cpp` – Tetris rules, scoring, line clear timing, high score storage
 - `src/display_matrix_*.cpp` – NeoPixel rendering, borders, text, animations
 - `src/input.cpp` – Bluepad32 + Serial input merged into a single `Actions` struct

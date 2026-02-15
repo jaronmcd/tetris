@@ -63,6 +63,17 @@
 #define INTRO_MARQUEE_FADE_FRAMES 8
 #define INTRO_MARQUEE_FADE_FRAME_MS 18
 
+// ======================
+// Boot intro: hybrid arcade scene (Tetris + Breakout)
+// ======================
+#define INTRO_HYBRID_ENABLED true
+// Total time budget for the full hybrid intro sequence.
+#define INTRO_HYBRID_MAX_MS 7000
+// Per-title marquee budget ("TETRIS", then "BREAKOUT").
+#define INTRO_HYBRID_TITLE_MS 1700
+// Smash scene frame pacing (higher = slower / more "slow motion").
+#define INTRO_HYBRID_FRAME_MS 40
+
 // Boot stats (MAX level screen)
 #define BOOT_STATS_ENABLED true
 

@@ -6,6 +6,8 @@
 #include "config.h"
 #include "tetris.h"
 
+class BreakoutGame;
+
 class MatrixDisplay {
 public:
   using AbortFn = bool (*)();
@@ -25,6 +27,9 @@ public:
 
   // Boot intro title: scrolling big text (e.g., "TETRIS"). Skippable.
   void showIntroMarquee(const char* text, uint8_t scale, uint32_t maxDurationMs, AbortFn abortFn = nullptr);
+
+  // Boot intro hybrid: marquee titles + breakout-vs-tetris smash scene. Skippable.
+  void showIntroHybridArcade(uint32_t maxDurationMs, AbortFn abortFn = nullptr);
 
 
 
@@ -48,6 +53,8 @@ public:
   void showBootStats(uint8_t maxLevel, uint16_t maxChaseAttempts, AbortFn abortFn = nullptr);
 
   void render(const TetrisGame& g, uint32_t nowMs);
+  void renderGameSelectMenu(uint8_t selectedGame, uint32_t nowMs);
+  void renderBreakout(const BreakoutGame& g, uint32_t nowMs);
 
 private:
   uint16_t XY(uint8_t x, uint8_t y) const;
