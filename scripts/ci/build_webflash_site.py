@@ -21,10 +21,10 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
-OFFSETS = {
+DEFAULT_OFFSETS = {
     "bootloader": 0x1000,  # 4096
     "partitions": 0x8000,  # 32768
     "boot_app0": 0xE000,  # 57344
@@ -58,6 +58,92 @@ def _glob_first(base: Path, patterns: list[str]) -> Optional[Path]:
             if m.is_file():
                 return m
     return None
+
+
+def _parse_offset(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if not s:
+            return None
+        try:
+            return int(s, 16 if s.startswith("0x") else 10)
+        except ValueError:
+            return None
+    return None
+
+
+def _load_idedata(build_dir: Path) -> dict[str, Any]:
+    idedata_path = build_dir / "idedata.json"
+    if not idedata_path.exists():
+        return {}
+    try:
+        return json.loads(idedata_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _resolve_offsets(idedata: dict[str, Any]) -> dict[str, int]:
+    offsets = dict(DEFAULT_OFFSETS)
+
+    extra = idedata.get("extra", {})
+    flash_images = extra.get("flash_images", [])
+    if isinstance(flash_images, list):
+        for entry in flash_images:
+            if not isinstance(entry, dict):
+                continue
+            off = _parse_offset(entry.get("offset"))
+            if off is None:
+                continue
+            name = Path(str(entry.get("path", ""))).name.lower()
+            if "bootloader" in name:
+                offsets["bootloader"] = off
+            elif "partition" in name:
+                offsets["partitions"] = off
+            elif "boot_app0" in name:
+                offsets["boot_app0"] = off
+
+    app_off = _parse_offset(extra.get("application_offset"))
+    if app_off is not None:
+        offsets["app"] = app_off
+
+    return offsets
+
+
+def _infer_chip_family(env_name: str, idedata: dict[str, Any]) -> str:
+    # Prefer explicit compile defines from idedata when available.
+    defines = idedata.get("defines", [])
+    if isinstance(defines, list):
+        joined = " ".join(str(d).upper() for d in defines)
+        if "ESP32S3" in joined:
+            return "ESP32-S3"
+        if "ESP32S2" in joined:
+            return "ESP32-S2"
+        if "ESP32C3" in joined:
+            return "ESP32-C3"
+        if "ESP32C6" in joined:
+            return "ESP32-C6"
+        if "ESP32H2" in joined:
+            return "ESP32-H2"
+        if "ESP32" in joined:
+            return "ESP32"
+
+    # Fallback to env name conventions.
+    env = env_name.lower()
+    if "s3" in env:
+        return "ESP32-S3"
+    if "s2" in env:
+        return "ESP32-S2"
+    if "c3" in env:
+        return "ESP32-C3"
+    if "c6" in env:
+        return "ESP32-C6"
+    if "h2" in env:
+        return "ESP32-H2"
+    return "ESP32"
 
 
 def _search_boot_app0(repo_root: Path, build_dir: Path) -> Optional[Path]:
@@ -95,6 +181,11 @@ def main() -> int:
     parser.add_argument("--env", default="esp32-s3-4mb", help="PlatformIO environment name")
     parser.add_argument("--out", default="site", help="Output directory for the static site")
     parser.add_argument(
+        "--chip-family",
+        default="auto",
+        help='ESP Web Tools chip family (e.g. "ESP32-S3"). Default: auto-detect',
+    )
+    parser.add_argument(
         "--version",
         default=None,
         help="Version string to embed in manifest (defaults to git describe)",
@@ -106,6 +197,9 @@ def main() -> int:
 
     if not build_dir.exists():
         raise SystemExit(f"Build directory not found: {build_dir} (did you run: pio run -e {args.env}?)")
+
+    idedata = _load_idedata(build_dir)
+    offsets = _resolve_offsets(idedata)
 
     firmware_bin = _find_first(
         [
@@ -139,8 +233,7 @@ def main() -> int:
     web_src = repo_root / "webflash"
     if not web_src.exists():
         raise SystemExit("Missing webflash/ directory")
-
-    shutil.copy2(web_src / "index.html", out_dir / "index.html")
+    shutil.copytree(web_src, out_dir, dirs_exist_ok=True)
 
     # Firmware files
     fw_dir = out_dir / "firmware"
@@ -155,22 +248,23 @@ def main() -> int:
         shutil.copy2(src, dest)
         copied_parts.append({"path": f"firmware/{dest_name}", "offset": offset})
 
-    copy_part(bootloader_bin, "bootloader.bin", OFFSETS["bootloader"])
-    copy_part(partitions_bin, "partitions.bin", OFFSETS["partitions"])
-    copy_part(boot_app0_bin, "boot_app0.bin", OFFSETS["boot_app0"])
-    copy_part(firmware_bin, "firmware.bin", OFFSETS["app"])
+    copy_part(bootloader_bin, "bootloader.bin", offsets["bootloader"])
+    copy_part(partitions_bin, "partitions.bin", offsets["partitions"])
+    copy_part(boot_app0_bin, "boot_app0.bin", offsets["boot_app0"])
+    copy_part(firmware_bin, "firmware.bin", offsets["app"])
 
     if not copied_parts:
         raise SystemExit("No firmware parts were copied; refusing to generate an empty manifest")
 
     version = args.version or _git_describe() or "dev"
+    chip_family = _infer_chip_family(args.env, idedata) if args.chip_family.lower() == "auto" else args.chip_family
 
     manifest = {
         "name": "ESP32 NeoPixel Tetris",
         "version": version,
         "builds": [
             {
-                "chipFamily": "ESP32-S3",
+                "chipFamily": chip_family,
                 "parts": copied_parts,
             }
         ],
@@ -183,6 +277,8 @@ def main() -> int:
 
     print(f"Built webflash site: {out_dir}")
     print(f"  parts: {[p['path'] for p in copied_parts]}")
+    print(f"  offsets: {offsets}")
+    print(f"  chipFamily: {chip_family}")
     print(f"  version: {version}")
     return 0
 

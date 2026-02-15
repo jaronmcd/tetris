@@ -1,11 +1,13 @@
 # ESP32 NeoPixel Tetris (16×16) 
 
-A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPixel/WS2812 matrix**.
+A tiny, self-contained **arcade bundle** for an **ESP32** driving a **16×16 NeoPixel/WS2812 matrix**.
 
-- **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
+- Game menu with **2 games**: **Tetris** and **Breakout**
+- Persistent boot mode: boots directly into the last selected game (**default: Tetris**)
+- **Tetris** uses a **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
 - **Bluetooth gamepad support** via **Bluepad32** (D‑pad + buttons)
 - **Idle → AI demo mode** (kicks in after a few seconds with no input)
-- Persistent **High Score** + **High Level** stored in ESP32 **NVS/Preferences**
+- Independent persistent highscores for **Tetris** and **Breakout** (ESP32 **NVS/Preferences**)
 - Animated, level-based **border themes** that **react to the falling piece** (subtle “sphere of light”)
 - Boot splash + skippable boot stats screen
 
@@ -13,21 +15,71 @@ A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPi
 
 ## Hardware
 
-- ESP32‑S3 DevKit (project defaults to `esp32-s3-devkitc-1`)
+- ESP32 DevKit V1 / ESP-WROOM-32 board (project default env: `esp32dev-4mb`)
+- ESP32-S3 DevKitC-1 (optional env: `esp32-s3-4mb`)
 - 16×16 NeoPixel / WS2812(B) matrix (256 LEDs)
 - 5V power supply sized for your matrix
   - Even with the default low brightness, *don’t* power the matrix from the dev board’s USB.
 - Common ground between ESP32 and LED matrix
 
-### Wiring (default)
+### Wiring
 
-| Signal | ESP32-S3 | Matrix |
+Default environment: `esp32dev-4mb`
+
+| Signal | ESP32 DevKit (ESP-WROOM-32) | Matrix |
 |---|---:|---|
-| Data | **GPIO 1** (`LED_PIN`) | DIN |
+| Data | **GPIO 23** (`LED_PIN` in `esp32dev-4mb`) | DIN |
 | Power | 5V supply | +5V |
 | Ground | GND | GND |
 
-If your board/matrix uses a different data pin, change it in `include/config.h`.
+Optional environment: `esp32-s3-4mb`
+
+| Signal | ESP32-S3 DevKitC-1 | Matrix |
+|---|---:|---|
+| Data | **GPIO 1** (`LED_PIN` in `esp32-s3-4mb`) | DIN |
+| Power | 5V supply | +5V |
+| Ground | GND | GND |
+
+If your board/matrix uses a different data pin, update `LED_PIN` in `platformio.ini` (`build_flags`) or `include/config.h`.
+
+### Microcontroller Environments (`platformio.ini`)
+
+| Environment | Board | Default LED data pin | USB/Serial behavior |
+|---|---|---:|---|
+| `esp32dev-4mb` | `esp32dev` (ESP-WROOM-32 DevKit) | GPIO 23 | External USB-UART bridge (CP2102/CH340). Repo currently pins `upload_port` + `monitor_port` to `/dev/ttyUSB0`. |
+| `esp32-s3-4mb` | `esp32-s3-devkitc-1` | GPIO 1 | Native USB CDC (`ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`). Usually appears as `/dev/ttyACM*` on Linux. |
+
+If you have multiple USB-UART adapters, prefer a stable path such as `/dev/serial/by-id/...` for `upload_port` and `monitor_port` in your selected environment.
+
+---
+
+## Build One (End-to-End)
+
+If you want to make one from scratch, follow this path:
+
+1. Gather parts
+   - ESP32 dev board (project default env: `esp32dev-4mb`)
+   - 16x16 WS2812/NeoPixel matrix
+   - 5V power supply (3A+ recommended)
+   - Data-capable USB cable
+   - Jumper wires
+   - Optional but recommended: 330-470 ohm resistor on `DIN`, 1000uF capacitor across matrix `+5V/GND`
+2. Wire it
+   - Matrix `DIN` -> ESP32 `GPIO 23` (`esp32dev-4mb`) or `GPIO 1` (`esp32-s3-4mb`)
+   - Matrix `+5V` -> 5V supply
+   - Matrix `GND` -> 5V supply ground
+   - ESP32 `GND` -> same ground as the matrix/power supply
+3. Flash firmware
+   - From this repo root:
+     ```bash
+     pio run -e esp32dev-4mb
+     pio run -e esp32dev-4mb -t upload
+     pio device monitor -b 115200
+     ```
+4. Pair a controller and play
+   - Connect a Bluetooth gamepad (or use serial keyboard controls listed below).
+
+Tip: If nothing lights up, check power and shared ground first, then verify the active environment’s `LED_PIN` in `platformio.ini`.
 
 ---
 
@@ -46,7 +98,17 @@ The build uses a Bluepad32-enabled Arduino core (see `platformio.ini`).
 
 ## Build, Upload, Monitor
 
-From the project root:
+From the project root.
+
+Default board (`esp32dev-4mb`):
+
+```bash
+pio run -e esp32dev-4mb
+pio run -e esp32dev-4mb -t upload
+pio device monitor -b 115200
+```
+
+ESP32-S3 board (`esp32-s3-4mb`):
 
 ```bash
 pio run -e esp32-s3-4mb
@@ -54,31 +116,60 @@ pio run -e esp32-s3-4mb -t upload
 pio device monitor -b 115200
 ```
 
-Or in one shot:
+Or in one shot for either environment:
 
 ```bash
-pio run -e esp32-s3-4mb -t upload -t monitor
+pio run -e esp32dev-4mb -t upload -t monitor
 ```
+
+If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor_port` in `platformio.ini` for that environment.
 
 ---
 
 ## Controls
 
+### Game menu (while paused)
+
+- Hold **SELECT/BACK/SHARE** for ~3 seconds while paused to open the game menu
+- **Left / Right**: choose game
+- **A / B / START**: launch selected game
+- Selected game becomes the new persistent boot mode
+- **Serial:** `W` / `Space` / `R` also launch from the menu
+
 ### Bluetooth gamepad (Bluepad32)
+
+#### Tetris
 
 - **D‑pad Left/Right**: move
 - **D‑pad Down (hold)**: soft drop
 - **A**: rotate
 - **B**: hard drop
-- **Y**: restart
+- **START**: pause/resume (screen dims while paused)
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to open the game menu
+
+#### Breakout
+
+- **D‑pad Left/Right**: move paddle
+- **A / B / D‑pad Down**: launch ball (and restart after game over)
+- **START**: pause/resume
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds to open the game menu
+- Idle for a few seconds to enable **Breakout AI demo mode** (any input returns to human control)
 
 ### Serial keyboard (via monitor)
+
+#### Tetris
 
 - **A / D**: move left/right
 - **W**: rotate
 - **S (hold)**: soft drop
 - **Space**: hard drop
 - **R**: restart
+
+#### Breakout
+
+- **A / D**: move paddle
+- **W / Space / S**: launch ball (and restart after game over)
+- **R**: return to game menu
 
 ---
 
@@ -96,7 +187,7 @@ These are handy for quickly testing animations without playing a full game:
 - **t** → preview **game over** (forced tie/record style)
 - **m** → preview **new MAX level celebration**
 - **g** → preview **MAX chase progress** (cycles fill + colors)
-- **0 / 1 / 2 / 3** → set AI speed profile (slow → turbo)
+- **0 / 1 / 2 / 3** → set AI speed profile (slow → turbo) for both Tetris and Breakout demos
 
 The firmware prints a reminder of these keys on boot over Serial.
 
@@ -110,9 +201,11 @@ All the project’s main tuning knobs live in:
 
 Useful settings:
 
-- `LED_PIN` – data pin for the matrix (default: **GPIO 1**)
+- `LED_PIN` – data pin for the matrix (default: **GPIO 23** in `esp32dev-4mb`; **GPIO 1** in `esp32-s3-4mb`)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
 - `BRIGHTNESS` – global brightness (default: **95**)
+- `PAUSE_DIM_ENABLED` – dim matrix while paused (default: **true**)
+- `PAUSE_BRIGHTNESS_WHEN_PAUSED` – brightness while paused (default: **22**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
 - `BOARD_OFFSET_X`, `BOARD_OFFSET_Y` – where the 10×16 Tetris board sits inside the matrix
 - `BOOT_STATS_ENABLED` – show the MAX-level "high screen" status during power-up (skippable)
@@ -130,6 +223,12 @@ AI smartness ladder (tied to MAX chase progress):
 - `AI_SMARTNESS_FROM_MAX_CHASE_ENABLED` – if true, every time the MAX chase progress hits a *full* background color, the AI increases its decision quality
 - `AI_SMARTNESS_BASE` – starting skill level (1 = current baseline; 0 is intentionally a little sloppy for testing)
 - `AI_SMARTNESS_MAX` – max skill level (keeps MCU CPU usage predictable)
+- `AI_ADAPTIVE_EVOLUTION_ENABLED` – adds a board-stress adaptive layer on top of the MAX-chase ladder
+- `AI_ADAPTIVE_PRESSURE_START_ROW` – top-stack row where adaptive pressure begins
+- `AI_ADAPTIVE_PRESSURE_FULL_ROW` – top-stack row where adaptive pressure is treated as maxed
+- `AI_ADAPTIVE_RAMP_BONUS_MAX_PCT` – max extra ramp added toward the next AI skill tier
+- `AI_ADAPTIVE_SKILL_BOOST_ON_PCT` – adaptive signal threshold to temporarily add `+1` skill
+- `AI_ADAPTIVE_SKILL_BOOST_OFF_PCT` – lower threshold to drop that temporary boost (hysteresis)
 
 Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
@@ -139,11 +238,20 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 - `pg` = has-played flag (used to gate "chasing the record" FX)
 - `ma` = MAX-level chase attempts counter (completed record-eligible runs since `ml` was last updated)
 
+Breakout records are stored independently in namespace `breakout`:
+
+- `hs` = Breakout high score
+
+Boot mode preference is stored in namespace `arcade`:
+
+- `bootm` = selected boot mode (`0`=Tetris, `1`=Breakout)
+
 ---
 
 ## How It Works (Project Layout)
 
-- `src/main.cpp` – boot flow, demo AI mode, main loop
+- `src/main.cpp` – boot flow, game-select menu, mode switching, main loop
+- `src/breakout.cpp` – Breakout rules, paddle/ball physics, brick field, lives
 - `src/tetris.cpp` – Tetris rules, scoring, line clear timing, high score storage
 - `src/display_matrix_*.cpp` – NeoPixel rendering, borders, text, animations
 - `src/input.cpp` – Bluepad32 + Serial input merged into a single `Actions` struct
@@ -155,7 +263,7 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
 - **Nothing lights up**
   - Confirm the matrix has **5V power** and **shared ground** with the ESP32.
-  - Verify `LED_PIN` in `include/config.h` matches your wiring.
+  - Verify the active environment’s `LED_PIN` in `platformio.ini` matches your wiring.
 
 - **Matrix looks mirrored / scrambled**
   - Toggle `SERPENTINE` or `MATRIX_BOTTOM_UP` in `include/config.h`.
@@ -176,6 +284,13 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
 ---
 
+## Contributing & Security
+
+- See `CONTRIBUTING.md` for development and PR guidelines.
+- Report security issues privately as described in `SECURITY.md`.
+
+---
+
 ## License
 
-No license file is included yet. If you plan to open-source this, add a `LICENSE` file (MIT/Apache-2.0/GPL/etc.) and update this section.
+This project is licensed under the MIT License. See `LICENSE`.

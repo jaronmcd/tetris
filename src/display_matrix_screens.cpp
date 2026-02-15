@@ -1,6 +1,11 @@
 #include "display_matrix.h"
 #include <Arduino.h>
 
+// ESP32 has a hardware RNG we can use for truly random boot intros.
+#if defined(ARDUINO_ARCH_ESP32)
+#include "esp_system.h" // esp_random()
+#endif
+
 // Local 5x7 thin-line digit font for numeric screens (columns, LSB=top row).
 static const uint8_t DIGITS_5x7[10][5] = {
   {0x3E, 0x41, 0x41, 0x41, 0x3E}, // 0
@@ -44,6 +49,144 @@ void MatrixDisplay::drawDigit5x7Scaled(uint8_t digit, int16_t x, int16_t y, uint
   }
 }
 
+// Adds a subtle contrast effect around a digit.
+// - darken=false: additive glow so the effect inherits the background hue.
+// - darken=true: directional drop shadow by darkening the digit mask at an offset.
+// - Uses a per-call mask so we don't "stack" modifications repeatedly in the same frame.
+void MatrixDisplay::drawDigit5x7ScaledHalo(uint8_t digit, int16_t x, int16_t y, uint8_t scale,
+                                          uint32_t color, uint8_t haloAlpha, bool darken, uint8_t* haloMask) {
+  if (digit > 9) return;
+  if (!haloMask || haloAlpha == 0) {
+    // No halo, just draw the digit.
+    drawDigit5x7Scaled(digit, x, y, scale, color);
+    return;
+  }
+
+  const uint8_t* cols = DIGITS_5x7[digit];
+
+  const uint32_t haloAdd = dimColor(color, haloAlpha);
+
+  auto darkenAt = [&](int16_t gx, int16_t gy, uint8_t alpha) {
+    if (gx < 0 || gx >= (int16_t)MATRIX_W || gy < 0 || gy >= (int16_t)MATRIX_H) return;
+    const uint16_t mi = (uint16_t)((uint16_t)gy * (uint16_t)MATRIX_W + (uint16_t)gx);
+    if (haloMask[mi]) return;
+    haloMask[mi] = 1;
+
+    const uint16_t idx = XY((uint8_t)gx, (uint8_t)gy);
+    uint32_t old = strip_.getPixelColor(idx);
+    uint8_t or_ = (uint8_t)((old >> 16) & 0xFF);
+    uint8_t og_ = (uint8_t)((old >> 8) & 0xFF);
+    uint8_t ob_ = (uint8_t)(old & 0xFF);
+
+    // Blend toward black by scaling the current pixel down.
+    const uint16_t factor = (uint16_t)(255 - alpha); // 0..255
+    uint8_t nr = (uint8_t)((uint16_t)or_ * factor / 255);
+    uint8_t ng = (uint8_t)((uint16_t)og_ * factor / 255);
+    uint8_t nb = (uint8_t)((uint16_t)ob_ * factor / 255);
+    strip_.setPixelColor(idx, strip_.Color(nr, ng, nb));
+  };
+
+  auto glowAt = [&](int16_t gx, int16_t gy) {
+    if (gx < 0 || gx >= (int16_t)MATRIX_W || gy < 0 || gy >= (int16_t)MATRIX_H) return;
+    const uint16_t mi = (uint16_t)((uint16_t)gy * (uint16_t)MATRIX_W + (uint16_t)gx);
+    if (haloMask[mi]) return;
+    haloMask[mi] = 1;
+
+    const uint16_t idx = XY((uint8_t)gx, (uint8_t)gy);
+    uint32_t old = strip_.getPixelColor(idx);
+    uint8_t or_ = (uint8_t)((old >> 16) & 0xFF);
+    uint8_t og_ = (uint8_t)((old >> 8) & 0xFF);
+    uint8_t ob_ = (uint8_t)(old & 0xFF);
+
+    // Additive glow: brighten the current pixel (clamped).
+    uint16_t r = (uint16_t)or_ + (uint16_t)((haloAdd >> 16) & 0xFF);
+    uint16_t g = (uint16_t)og_ + (uint16_t)((haloAdd >> 8) & 0xFF);
+    uint16_t b = (uint16_t)ob_ + (uint16_t)(haloAdd & 0xFF);
+
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+
+    strip_.setPixelColor(idx, strip_.Color((uint8_t)r, (uint8_t)g, (uint8_t)b));
+  };
+
+  if (darken) {
+    // Directional drop shadow: darken a shifted copy of the digit mask, then
+    // draw the digit on top. This tends to read much better through diffuser
+    // grids than a 1px outline.
+    const int8_t offX = (int8_t)HIGH_SCREEN_SHADOW_OFFSET_X;
+    const int8_t offY = (int8_t)HIGH_SCREEN_SHADOW_OFFSET_Y;
+    const uint8_t softA = (uint8_t)HIGH_SCREEN_SHADOW_SOFT_ALPHA;
+
+    // Core shadow pass.
+    for (int col = 0; col < 5; col++) {
+      uint8_t bits = cols[col];
+      for (int row = 0; row < 7; row++) {
+        if (!((bits >> row) & 1)) continue;
+
+        for (uint8_t sy = 0; sy < scale; sy++) {
+          for (uint8_t sx = 0; sx < scale; sx++) {
+            const int16_t px = (int16_t)(x + (int16_t)(col * scale) + (int16_t)sx);
+            const int16_t py = (int16_t)(y + (int16_t)(row * scale) + (int16_t)sy);
+            darkenAt((int16_t)(px + offX), (int16_t)(py + offY), haloAlpha);
+          }
+        }
+      }
+    }
+
+    // Optional soft edge: extend the shadow slightly further in the same
+    // direction to simulate a tiny blur.
+    if (softA > 0) {
+      for (int col = 0; col < 5; col++) {
+        uint8_t bits = cols[col];
+        for (int row = 0; row < 7; row++) {
+          if (!((bits >> row) & 1)) continue;
+
+          for (uint8_t sy = 0; sy < scale; sy++) {
+            for (uint8_t sx = 0; sx < scale; sx++) {
+              const int16_t px = (int16_t)(x + (int16_t)(col * scale) + (int16_t)sx);
+              const int16_t py = (int16_t)(y + (int16_t)(row * scale) + (int16_t)sy);
+
+              // One extra pixel of spread in the shadow direction.
+              darkenAt((int16_t)(px + offX + (offX >= 0 ? 1 : -1)), (int16_t)(py + offY), softA);
+              darkenAt((int16_t)(px + offX), (int16_t)(py + offY + (offY >= 0 ? 1 : -1)), softA);
+              darkenAt((int16_t)(px + offX + (offX >= 0 ? 1 : -1)), (int16_t)(py + offY + (offY >= 0 ? 1 : -1)), softA);
+            }
+          }
+        }
+      }
+    }
+
+    drawDigit5x7Scaled(digit, x, y, scale, color);
+    return;
+  }
+
+  // Glow pass: for every "on" pixel of the scaled digit, brighten its 8-neighborhood.
+  for (int col = 0; col < 5; col++) {
+    uint8_t bits = cols[col];
+    for (int row = 0; row < 7; row++) {
+      if (!((bits >> row) & 1)) continue;
+
+      for (uint8_t sy = 0; sy < scale; sy++) {
+        for (uint8_t sx = 0; sx < scale; sx++) {
+          const int16_t px = (int16_t)(x + (int16_t)(col * scale) + (int16_t)sx);
+          const int16_t py = (int16_t)(y + (int16_t)(row * scale) + (int16_t)sy);
+
+          for (int8_t dy = -1; dy <= 1; dy++) {
+            for (int8_t dx = -1; dx <= 1; dx++) {
+              if (dx == 0 && dy == 0) continue;
+              glowAt((int16_t)(px + dx), (int16_t)(py + dy));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Digit pass (crisp on top of the halo)
+  drawDigit5x7Scaled(digit, x, y, scale, color);
+}
+
 void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t color) {
   if (value > 99) value = 99;
 
@@ -85,6 +228,94 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
 
 }
 
+void MatrixDisplay::showPauseResetHoldFade(uint32_t heldMs, uint32_t holdMsRequired) {
+  if (holdMsRequired == 0) return;
+  if (heldMs > holdMsRequired) heldMs = holdMsRequired;
+
+  // Strong fade-to-black curve:
+  // - Immediately drops to a visibly darker scene
+  // - Continues to crush toward black as hold nears completion.
+  const uint32_t invMs = holdMsRequired - heldMs;
+  const uint64_t inv2 = (uint64_t)invMs * (uint64_t)invMs;
+  const uint64_t hold2 = (uint64_t)holdMsRequired * (uint64_t)holdMsRequired;
+  uint8_t keep = (uint8_t)((inv2 * 110u) / hold2); // 110..0 (max ~43% of paused frame)
+
+  for (uint16_t i = 0; i < NUM_LEDS; i++) {
+    uint32_t old = strip_.getPixelColor(i);
+    uint8_t r = (uint8_t)((old >> 16) & 0xFF);
+    uint8_t g = (uint8_t)((old >> 8) & 0xFF);
+    uint8_t b = (uint8_t)(old & 0xFF);
+    r = (uint8_t)(((uint16_t)r * keep) / 255u);
+    g = (uint8_t)(((uint16_t)g * keep) / 255u);
+    b = (uint8_t)(((uint16_t)b * keep) / 255u);
+    strip_.setPixelColor(i, strip_.Color(r, g, b));
+  }
+
+  // Center blackout plate so the countdown is always readable on noisy frames.
+  for (int16_t y = 0; y < (int16_t)MATRIX_H; y++) {
+    for (int16_t x = 2; x <= 13; x++) {
+      setPixel(x, y, strip_.Color(0, 0, 0));
+    }
+  }
+
+  // Countdown number: 3, 2, 1.
+  uint32_t remainMs = holdMsRequired - heldMs;
+  uint8_t remainSec = (uint8_t)((remainMs + 999u) / 1000u);
+  if (remainSec < 1) remainSec = 1;
+  drawNumberCenteredHalo(remainSec,
+                         2,
+                         strip_.Color(255, 255, 255),
+                         220,
+                         true);
+
+  strip_.show();
+}
+
+void MatrixDisplay::drawNumberCenteredHalo(uint8_t value, uint8_t scale, uint32_t color, uint8_t haloAlpha, bool darken) {
+  if (haloAlpha == 0) {
+    drawNumberCentered(value, scale, color);
+    return;
+  }
+
+  if (value > 99) value = 99;
+
+  uint8_t d0 = (uint8_t)(value / 10);
+  uint8_t d1 = (uint8_t)(value % 10);
+  const bool twoDigits = (value >= 10);
+
+  // Match drawNumberCentered's auto-fit behavior.
+  uint8_t s = (scale < 1) ? 1 : scale;
+  while (s > 1) {
+    const int digitW = 5 * s;
+    const int digitH = 7 * s;
+    const int spacing = s;
+    const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
+    if (totalW <= MATRIX_W && digitH <= MATRIX_H) break;
+    s--;
+  }
+
+  const int digitW = 5 * s;
+  const int digitH = 7 * s;
+  const int spacing = s;
+  const int totalW = twoDigits ? (digitW * 2 + spacing) : digitW;
+
+  int16_t startX = (int16_t)((MATRIX_W - totalW) / 2);
+  int16_t startY = (int16_t)((MATRIX_H - digitH) / 2);
+
+  if (startX < 0) startX = 0;
+  if (startY < 0) startY = 0;
+
+  // Per-frame mask so a halo pixel is only modified once.
+  uint8_t mask[MATRIX_W * MATRIX_H] = {};
+
+  if (!twoDigits) {
+    drawDigit5x7ScaledHalo(d1, startX, startY, s, color, haloAlpha, darken, mask);
+  } else {
+    drawDigit5x7ScaledHalo(d0, startX, startY, s, color, haloAlpha, darken, mask);
+    drawDigit5x7ScaledHalo(d1, (int16_t)(startX + digitW + spacing), startY, s, color, haloAlpha, darken, mask);
+  }
+}
+
 bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t durationMs, AbortFn abortFn) {
   const uint8_t scale = 1; // 1px-stroke digits (avoid chunky "block" look)
   const uint32_t start = millis();
@@ -95,14 +326,19 @@ bool MatrixDisplay::showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t f
     tickPowerBrightness(millis());
 
     strip_.fill(bg);
-    drawNumberCentered(value, scale, fg);
+    // Match the MAX-level number styling: optional halo that can be configured
+    // as an additive glow or (preferably for diffuser grids) a directional
+    // drop shadow.
+    drawNumberCenteredHalo(value, scale, fg,
+                           (uint8_t)HIGH_SCREEN_HALO_ALPHA,
+                           (bool)HIGH_SCREEN_HALO_DARKEN);
     strip_.show();
     delay(25);
   }
   return false;
 }
 
-void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts) {
+void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts, uint32_t nowMs) {
 #if MAX_LEVEL_CHASE_PROGRESS_ENABLED
   uint16_t steps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
   if (steps < 1) steps = 1;
@@ -145,16 +381,64 @@ void MatrixDisplay::fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, ui
   uint32_t filled = ((uint32_t)inCycle * (uint32_t)MATRIX_H + (uint32_t)steps - 1u) / (uint32_t)steps;
   if (filled > MATRIX_H) filled = MATRIX_H;
 
+  // Optional subtle animation: a small moving highlight band across the filled
+  // region so the meter reads as "alive".
+  auto brightenTowardWhite = [&](uint32_t c, uint8_t alpha) -> uint32_t {
+    if (alpha == 0) return c;
+    uint8_t r = (uint8_t)((c >> 16) & 0xFF);
+    uint8_t g = (uint8_t)((c >> 8) & 0xFF);
+    uint8_t b = (uint8_t)(c & 0xFF);
+    r = (uint8_t)(r + (uint16_t)(255 - r) * alpha / 255);
+    g = (uint8_t)(g + (uint16_t)(255 - g) * alpha / 255);
+    b = (uint8_t)(b + (uint16_t)(255 - b) * alpha / 255);
+    return strip_.Color(r, g, b);
+  };
+
+  // Optional animation: sweep a subtle highlight band UP through the filled
+  // region so it visually communicates "progress" (bottom -> top).
+  int16_t hiRowFromBottom = -1;
+  int16_t hiRowFromBottom2 = -1;
+  uint32_t hiC = bgFill;
+  uint32_t hiC2 = bgFill;
+
+#if MAX_LEVEL_CHASE_PROGRESS_ANIM_ENABLED
+  {
+    const uint16_t speed = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_ANIM_SPEED_MS;
+    if (speed > 0 && filled > 0) {
+      // Add a small "gap" at the end so the sweep restart isn't a harsh jump
+      // on very small filled regions.
+      const uint16_t gap = (filled >= 4) ? 2u : 0u;
+      const uint16_t period = (uint16_t)filled + gap;
+      const uint16_t pos = (uint16_t)((nowMs / speed) % (uint32_t)period);
+
+      if (pos < filled) {
+        hiRowFromBottom = (int16_t)pos;
+        hiRowFromBottom2 = (pos > 0) ? (int16_t)(pos - 1) : -1;
+      }
+
+      hiC = brightenTowardWhite(bgFill, (uint8_t)MAX_LEVEL_CHASE_PROGRESS_ANIM_ALPHA);
+      hiC2 = brightenTowardWhite(bgFill, (uint8_t)MAX_LEVEL_CHASE_PROGRESS_ANIM_TAIL_ALPHA);
+    }
+  }
+#endif
+
   for (int16_t y = (int16_t)MATRIX_H - 1; y >= 0; y--) {
-    uint16_t rowFromBottom = (uint16_t)((MATRIX_H - 1) - (uint16_t)y);
-    if (rowFromBottom >= filled) break;
+    const uint16_t rowFromBottomU = (uint16_t)((MATRIX_H - 1) - (uint16_t)y);
+    if (rowFromBottomU >= filled) break;
+
+    uint32_t rowC = bgFill;
+    const int16_t rowFromBottom = (int16_t)rowFromBottomU;
+    if (rowFromBottom == hiRowFromBottom) rowC = hiC;
+    else if (rowFromBottom == hiRowFromBottom2) rowC = hiC2;
+
     for (uint8_t x = 0; x < MATRIX_W; x++) {
-      setPixel((int16_t)x, y, bgFill);
+      setPixel((int16_t)x, y, rowC);
     }
   }
 #else
   (void)chaseBg;
   (void)maxChaseAttempts;
+  (void)nowMs;
   strip_.fill(baseBg);
 #endif
 }
@@ -168,13 +452,98 @@ bool MatrixDisplay::showMaxLevelNumberScreen(uint8_t value,
   const uint8_t scale = 1;
   const uint32_t start = millis();
 
+  // "AI level-up rollovers" == number of times the MAX chase progress meter
+  // has fully filled and wrapped back to 0.
+  //
+  // Instead of drawing a number, render it as a tiny "LED counter":
+  // - Fill pixels from bottom-left -> right, then up a row as needed.
+  // - The NEXT pixel (upcoming rollover) gently pulses to hint progress,
+  //   and the pulse speeds up slightly as it approaches the next rollover.
+  uint16_t chaseSteps = (uint16_t)MAX_LEVEL_CHASE_PROGRESS_STEPS;
+  if (chaseSteps < 1) chaseSteps = 1;
+
+  const uint32_t aiRolloverCount = (uint32_t)maxChaseAttempts / (uint32_t)chaseSteps;
+  const uint16_t aiInCycle = (uint16_t)(maxChaseAttempts % chaseSteps);
+
+  // Keep the MAX digits readable by reserving a small band at the bottom.
+  // (On a 16x16 matrix, 5 rows gives 80 pixels of "rollover history".)
+  const uint8_t rolloverRows = (MATRIX_H < 5) ? (uint8_t)MATRIX_H : 5;
+  const uint16_t rolloverPixels = (uint16_t)MATRIX_W * (uint16_t)rolloverRows;
+
+  const uint16_t aiRolloverSolid = (aiRolloverCount >= (uint32_t)rolloverPixels)
+                                    ? rolloverPixels
+                                    : (uint16_t)aiRolloverCount;
+  const bool aiRolloverFull = (aiRolloverCount >= (uint32_t)rolloverPixels);
+
+  // Slightly dimmer than the main digits so the MAX number still reads as primary.
+  const uint32_t aiRolloverSolidColor = dimColor(fg, 180);
+
   while ((millis() - start) < durationMs) {
     if (abortFn && abortFn()) return true;
 
-    tickPowerBrightness(millis());
+    uint32_t now = millis();
+    tickPowerBrightness(now);
 
-    fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts);
-    drawNumberCentered(value, scale, fg);
+    fillMaxChaseBackground(baseBg, chaseBg, maxChaseAttempts, now);
+    drawNumberCenteredHalo(value, scale, fg,
+                           (uint8_t)HIGH_SCREEN_HALO_ALPHA,
+                           (bool)HIGH_SCREEN_HALO_DARKEN);
+
+    // Bottom band: AI "level-up rollover" meter (LED counter).
+    // Fills pixels from bottom-left -> right, then up a row as needed.
+    //
+    // Animation hint:
+    // - If we're partway to the next rollover, the NEXT pixel pulses.
+    // - If we've saturated the visible range, the LAST pixel pulses to imply "80+".
+    for (uint16_t i = 0; i < aiRolloverSolid; i++) {
+      int16_t x = (int16_t)(i % MATRIX_W);
+      int16_t y = (int16_t)((MATRIX_H - 1) - (i / MATRIX_W));
+      setPixel(x, y, aiRolloverSolidColor);
+    }
+
+    if (!aiRolloverFull && aiInCycle > 0 && chaseSteps > 1) {
+      const uint16_t idx = aiRolloverSolid;
+      int16_t x = (int16_t)(idx % MATRIX_W);
+      int16_t y = (int16_t)((MATRIX_H - 1) - (idx / MATRIX_W));
+
+      // Progress (0..255) toward the next rollover.
+      const uint16_t denom = (chaseSteps > 1) ? (uint16_t)(chaseSteps - 1) : 1;
+      const uint16_t inC = (aiInCycle > denom) ? denom : aiInCycle;
+      const uint8_t prog = (uint8_t)((uint32_t)inC * 255u / denom);
+
+      // Pulse period shrinks as we get closer to the rollover (subtle urgency).
+      const uint16_t periodMax = 720;
+      const uint16_t periodMin = 220;
+      const uint16_t period = (uint16_t)(periodMax - (uint32_t)prog * (periodMax - periodMin) / 255u);
+
+      const uint16_t t = (uint16_t)(now % (uint32_t)period);
+      const uint16_t half = (period / 2u) ? (period / 2u) : 1u;
+      const uint16_t tri = (t < half) ? t : (period - t);
+      const uint8_t tri255 = (uint8_t)((uint32_t)tri * 255u / half);
+
+      // Brightness pulse strength increases with progress.
+      const uint16_t baseA = 18u + (uint16_t)prog * 28u / 255u;  // 18..46
+      const uint16_t ampA  = 35u + (uint16_t)prog * 200u / 255u; // 35..235
+      uint16_t a = baseA + (uint32_t)tri255 * ampA / 255u;
+      if (a > 255u) a = 255u;
+
+      setPixel(x, y, dimColor(fg, (uint8_t)a));
+    } else if (aiRolloverFull && rolloverPixels > 0) {
+      // Saturated: pulse the last pixel to imply "and more".
+      const uint16_t idx = (uint16_t)(rolloverPixels - 1u);
+      int16_t x = (int16_t)(idx % MATRIX_W);
+      int16_t y = (int16_t)((MATRIX_H - 1) - (idx / MATRIX_W));
+
+      const uint16_t period = 650;
+      const uint16_t t = (uint16_t)(now % (uint32_t)period);
+      const uint16_t half = period / 2u;
+      const uint16_t tri = (t < half) ? t : (period - t);
+      const uint8_t tri255 = (uint8_t)((uint32_t)tri * 255u / half);
+
+      const uint8_t a = (uint8_t)(180u + (uint16_t)tri255 * 75u / 255u); // 180..255
+      setPixel(x, y, dimColor(fg, a));
+    }
+
     strip_.show();
     delay(25);
   }
@@ -446,8 +815,13 @@ void MatrixDisplay::showIntroDropFill(uint32_t maxDurationMs, AbortFn abortFn) {
     strip_.show();
   };
 
-  // Seed RNG lightly (portable; avoids MCU-specific calls).
-  randomSeed((uint32_t)micros());
+  // Seed RNG for Arduino's random(). On ESP32 we can mix in the hardware RNG
+  // so the intro pattern isn't repeatable from boot-to-boot.
+  #if defined(ARDUINO_ARCH_ESP32)
+    randomSeed((uint32_t)(esp_random() ^ (uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+  #else
+    randomSeed((uint32_t)((uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+  #endif
 
   // Drop pieces until filled or time.
   while (millis() < deadline && filledCount < (MATRIX_W * MATRIX_H)) {
@@ -609,7 +983,12 @@ while (millis() < holdEnd) {
 static bool _glyph5x7(char c, uint8_t rows[7]) {
   for (int i = 0; i < 7; i++) rows[i] = 0;
   switch (c) {
+    case 'A': rows[0]=0b01110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b11111; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b10001; return true;
+    case 'B': rows[0]=0b11110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b11110; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b11110; return true;
+    case 'K': rows[0]=0b10001; rows[1]=0b10010; rows[2]=0b10100; rows[3]=0b11000; rows[4]=0b10100; rows[5]=0b10010; rows[6]=0b10001; return true;
+    case 'O': rows[0]=0b01110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b10001; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b01110; return true;
     case 'T': rows[0]=0b11111; rows[1]=0b00100; rows[2]=0b00100; rows[3]=0b00100; rows[4]=0b00100; rows[5]=0b00100; rows[6]=0b00100; return true;
+    case 'U': rows[0]=0b10001; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b10001; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b01110; return true;
     case 'E': rows[0]=0b11111; rows[1]=0b10000; rows[2]=0b10000; rows[3]=0b11110; rows[4]=0b10000; rows[5]=0b10000; rows[6]=0b11111; return true;
     case 'R': rows[0]=0b11110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b11110; rows[4]=0b10100; rows[5]=0b10010; rows[6]=0b10001; return true;
     case 'I': rows[0]=0b11111; rows[1]=0b00100; rows[2]=0b00100; rows[3]=0b00100; rows[4]=0b00100; rows[5]=0b00100; rows[6]=0b11111; return true;
@@ -666,24 +1045,30 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     }
   };
 
-  auto drawTextAt = [&](int x) {
+  auto drawTextAt = [&](int x, uint32_t color) {
     strip_.clear();
     // center vertically; 7*scale fits within 16 (scale=2 => 14px)
     const int y0 = (MATRIX_H - (7 * (int)scale)) / 2;
     int cx = x;
-    const uint32_t c = strip_.Color(255, 255, 255);
     for (int i = 0; i < len; i++) {
-      drawScaledGlyph(text[i], cx, y0, c);
+      drawScaledGlyph(text[i], cx, y0, color);
       cx += charW;
     }
     strip_.show();
   };
 
+  const uint32_t white = strip_.Color(255, 255, 255);
+
+  // Track the last drawn X so we can end smoothly without "jumping" to a
+  // centered pose (which looks like a restart on small matrices).
+  int lastX = xStart;
+
   const int totalSteps = (xStart - xEnd) + 1;
   for (int step = 0; step < totalSteps; step++) {
     tickPowerBrightness(millis());
     const int x = xStart - step;
-    drawTextAt(x);
+    lastX = x;
+    drawTextAt(x, white);
 
     if (abortFn && abortFn()) return;
     if (millis() >= deadline) break;
@@ -693,15 +1078,335 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     delay((uint32_t)(d < 1 ? 1 : d));
   }
 
-  // brief hold centered, then clear
+  // Smooth outro: brief hold on the *current* frame (no reposition/jump), then
+  // a short fade to black so the next intro phase doesn't feel abrupt.
+  {
+    const uint32_t nowHold = (uint32_t)millis();
+    const uint32_t holdEnd = (deadline < (nowHold + (uint32_t)INTRO_MARQUEE_END_HOLD_MS))
+                               ? deadline
+                               : (nowHold + (uint32_t)INTRO_MARQUEE_END_HOLD_MS);
+    while (millis() < holdEnd) {
+      tickPowerBrightness(millis());
+      if (abortFn && abortFn()) return;
+      delay(10);
+    }
+  }
+
+  // Quick fade-out (best-effort within remaining time).
+  for (uint8_t i = 0; i < (uint8_t)INTRO_MARQUEE_FADE_FRAMES; i++) {
+    if (abortFn && abortFn()) return;
+    if (millis() >= deadline) break;
+    tickPowerBrightness(millis());
+    const uint8_t denom = (INTRO_MARQUEE_FADE_FRAMES <= 1) ? 1U : (uint8_t)(INTRO_MARQUEE_FADE_FRAMES - 1);
+    const uint8_t a = (uint8_t)(255 - (uint16_t)i * 255U / (uint16_t)denom);
+    drawTextAt(lastX, scaleColor(white, a));
+    delay((uint32_t)INTRO_MARQUEE_FADE_FRAME_MS);
+  }
+
   tickPowerBrightness(millis());
-  drawTextAt((MATRIX_W - textW) / 2);
+  strip_.clear();
+  strip_.show();
+#endif
+}
+
+void MatrixDisplay::showIntroHybridArcade(uint32_t maxDurationMs, AbortFn abortFn) {
+#if !INTRO_ENABLED
+  (void)maxDurationMs;
+  (void)abortFn;
+  return;
+#else
+  if (maxDurationMs == 0) return;
+
+  const uint32_t start = millis();
+  const uint32_t deadline = start + maxDurationMs;
+
+#if defined(ARDUINO_ARCH_ESP32)
+  randomSeed((uint32_t)(esp_random() ^ (uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+#else
+  randomSeed((uint32_t)((uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+#endif
+
+  bool filled[MATRIX_H][MATRIX_W] = {};
+  uint32_t col[MATRIX_H][MATRIX_W] = {};
+  int filledCount = 0;
+
+  constexpr int16_t kPaddleW = 4;
+  const int16_t paddleY = (int16_t)MATRIX_H - 1;
+  int16_t paddleX = (int16_t)((MATRIX_W - kPaddleW) / 2);
+
+  int16_t ballXQ8 = (int16_t)((paddleX + 1) << 8);
+  int16_t ballYQ8 = (int16_t)((paddleY - 1) << 8);
+  int16_t velXQ8 = (int16_t)((random(0, 2) == 0) ? -28 : 28);
+  int16_t velYQ8 = (int16_t)-34;
+
+  constexpr int16_t kMinAbsVx = 10;
+  constexpr int16_t kMaxAbsVx = 52;
+  constexpr int16_t kMinAbsVy = 14;
+  constexpr int16_t kMaxAbsVy = 56;
+
+  auto clampI16 = [&](int16_t v, int16_t lo, int16_t hi) -> int16_t {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+  };
+
+  auto progress1024 = [&]() -> uint16_t {
+    const uint32_t now = (uint32_t)millis();
+    const uint32_t elapsed = (now - start);
+    const uint32_t total = (uint32_t)(MATRIX_W * MATRIX_H);
+    const uint32_t fillP = (total == 0U) ? 0U : (uint32_t)filledCount * 1024U / total;
+    const uint32_t timeP = (maxDurationMs == 0U) ? 1024U : (elapsed * 1024U / maxDurationMs);
+    uint32_t p = (fillP > timeP) ? fillP : timeP;
+    if (p > 1024U) p = 1024U;
+    return (uint16_t)p;
+  };
+
+  auto frameDelayMs = [&]() -> uint16_t {
+    const uint16_t p = progress1024();
+    uint16_t d = _rampU16((uint16_t)INTRO_FRAME_MS_START, (uint16_t)INTRO_FRAME_MS_END, p);
+    if (d < (uint16_t)INTRO_HYBRID_FRAME_MS) d = (uint16_t)INTRO_HYBRID_FRAME_MS;
+    return (d < 1U) ? 1U : d;
+  };
+
+  auto framesPerPiece = [&]() -> uint8_t {
+    const uint16_t p = progress1024();
+    const uint16_t f = _rampU16((uint16_t)INTRO_FRAMES_PER_PIECE_START, (uint16_t)INTRO_FRAMES_PER_PIECE_END, p);
+    return (f < 2U) ? 2U : (uint8_t)f;
+  };
+
+  auto collides = [&](int x, int y, const _IntroPt pts[4]) -> bool {
+    for (int i = 0; i < 4; i++) {
+      const int xx = x + pts[i].x;
+      const int yy = y + pts[i].y;
+      if (xx < 0 || xx >= MATRIX_W) return true;
+      if (yy >= MATRIX_H) return true;
+      if (yy >= 0 && filled[yy][xx]) return true;
+    }
+    return false;
+  };
+
+  auto pieceAliveCount = [&](const bool alive[4]) -> uint8_t {
+    uint8_t n = 0;
+    for (int i = 0; i < 4; i++) if (alive[i]) n++;
+    return n;
+  };
+
+  auto updateBall = [&](int pieceX, int pieceY, const _IntroPt pts[4], bool alivePiece[4], bool pieceActive) {
+    int16_t ballPx = (int16_t)((ballXQ8 + 128) >> 8);
+    int16_t targetX = (int16_t)(ballPx - (kPaddleW / 2));
+    targetX = clampI16(targetX, 0, (int16_t)MATRIX_W - kPaddleW);
+    if (paddleX < targetX) paddleX++;
+    else if (paddleX > targetX) paddleX--;
+
+    const int16_t oldXQ8 = ballXQ8;
+    const int16_t oldYQ8 = ballYQ8;
+
+    ballXQ8 = (int16_t)(ballXQ8 + velXQ8);
+    ballYQ8 = (int16_t)(ballYQ8 + velYQ8);
+
+    const int16_t minXQ8 = 0;
+    const int16_t maxXQ8 = (int16_t)(((int16_t)MATRIX_W - 1) << 8);
+    const int16_t minYQ8 = 0;
+
+    if (ballXQ8 < minXQ8) {
+      ballXQ8 = minXQ8;
+      velXQ8 = (int16_t)-velXQ8;
+    } else if (ballXQ8 > maxXQ8) {
+      ballXQ8 = maxXQ8;
+      velXQ8 = (int16_t)-velXQ8;
+    }
+
+    if (ballYQ8 < minYQ8) {
+      ballYQ8 = minYQ8;
+      velYQ8 = (int16_t)abs(velYQ8);
+    }
+
+    int16_t bx = clampI16((int16_t)((ballXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    int16_t by = clampI16((int16_t)((ballYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+    int16_t oldBx = clampI16((int16_t)((oldXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    int16_t oldBy = clampI16((int16_t)((oldYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+
+    bool broke = false;
+
+    if (pieceActive) {
+      for (int i = 0; i < 4; i++) {
+        if (!alivePiece[i]) continue;
+        const int16_t cx = (int16_t)(pieceX + pts[i].x);
+        const int16_t cy = (int16_t)(pieceY + pts[i].y);
+        if (cy < 0 || cy >= (int16_t)MATRIX_H || cx < 0 || cx >= (int16_t)MATRIX_W) continue;
+        if (cx == bx && cy == by) {
+          alivePiece[i] = false;
+          broke = true;
+          break;
+        }
+      }
+    }
+
+    if (!broke && by >= 0 && by < (int16_t)MATRIX_H && bx >= 0 && bx < (int16_t)MATRIX_W && filled[by][bx]) {
+      filled[by][bx] = false;
+      col[by][bx] = 0;
+      if (filledCount > 0) filledCount--;
+      broke = true;
+    }
+
+    if (broke) {
+      if (oldBy != by) velYQ8 = (int16_t)-velYQ8;
+      else if (oldBx != bx) velXQ8 = (int16_t)-velXQ8;
+      else velYQ8 = (int16_t)-velYQ8;
+    }
+
+    bx = clampI16((int16_t)((ballXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    by = clampI16((int16_t)((ballYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+
+    if (velYQ8 > 0 && by >= (paddleY - 1)) {
+      const int16_t paddleRight = (int16_t)(paddleX + kPaddleW - 1);
+      if (bx >= paddleX && bx <= paddleRight) {
+        ballYQ8 = (int16_t)((paddleY - 1) << 8);
+        velYQ8 = (int16_t)-abs(velYQ8);
+        const int16_t centerQ8 = (int16_t)((paddleX << 8) + ((kPaddleW - 1) << 7));
+        const int16_t offsetQ8 = (int16_t)(ballXQ8 - centerQ8);
+        velXQ8 = (int16_t)(velXQ8 + offsetQ8 / 10);
+      }
+    }
+
+    const int16_t loseY = (int16_t)(((int16_t)MATRIX_H - 1) << 8) + (2 << 8);
+    if (ballYQ8 > loseY) {
+      ballXQ8 = (int16_t)((paddleX + 1) << 8);
+      ballYQ8 = (int16_t)((paddleY - 1) << 8);
+      velXQ8 = (int16_t)((random(0, 2) == 0) ? -26 : 26);
+      velYQ8 = (int16_t)-32;
+    }
+
+    const int16_t avx = (int16_t)abs(velXQ8);
+    const int16_t avy = (int16_t)abs(velYQ8);
+    if (avx < kMinAbsVx) velXQ8 = (velXQ8 < 0) ? (int16_t)-kMinAbsVx : (int16_t)kMinAbsVx;
+    if (avx > kMaxAbsVx) velXQ8 = (velXQ8 < 0) ? (int16_t)-kMaxAbsVx : (int16_t)kMaxAbsVx;
+    if (avy < kMinAbsVy) velYQ8 = (velYQ8 < 0) ? (int16_t)-kMinAbsVy : (int16_t)kMinAbsVy;
+    if (avy > kMaxAbsVy) velYQ8 = (velYQ8 < 0) ? (int16_t)-kMaxAbsVy : (int16_t)kMaxAbsVy;
+  };
+
+  auto drawScene = [&](int px, int py, const _IntroPt pts[4], const bool alivePiece[4], uint32_t pc, bool drawPiece) {
+    strip_.clear();
+
+    for (int y = 0; y < MATRIX_H; y++) {
+      const uint8_t vv = (uint8_t)(2u + (y >> 2));
+      for (int x = 0; x < MATRIX_W; x++) {
+        setPixel(x, y, strip_.Color(0, 0, vv));
+      }
+    }
+
+    for (int y = 0; y < MATRIX_H; y++) {
+      for (int x = 0; x < MATRIX_W; x++) {
+        if (filled[y][x]) {
+          strip_.setPixelColor(XY((uint8_t)x, (uint8_t)y), col[y][x]);
+        }
+      }
+    }
+
+    if (drawPiece) {
+      for (int i = 0; i < 4; i++) {
+        if (!alivePiece[i]) continue;
+        const int xx = px + pts[i].x;
+        const int yy = py + pts[i].y;
+        if (xx < 0 || xx >= MATRIX_W || yy < 0 || yy >= MATRIX_H) continue;
+        strip_.setPixelColor(XY((uint8_t)xx, (uint8_t)yy), pc);
+      }
+    }
+
+    const uint32_t paddleC = strip_.Color(70, 210, 230);
+    for (int16_t dx = 0; dx < kPaddleW; dx++) {
+      setPixel((int16_t)(paddleX + dx), paddleY, paddleC);
+    }
+
+    const int16_t bx = clampI16((int16_t)((ballXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    const int16_t by = clampI16((int16_t)((ballYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+
+    setPixel(bx, by, strip_.Color(255, 255, 255));
+
+    strip_.show();
+  };
+
+  while (millis() < deadline && filledCount < (MATRIX_W * MATRIX_H)) {
+    const uint8_t type = (uint8_t)random(0, 7);
+    const uint8_t rot = (uint8_t)random(0, 4);
+
+    _IntroPt pts[4];
+    for (int i = 0; i < 4; i++) pts[i] = _BASE[type][i];
+    for (int r = 0; r < rot; r++) {
+      for (int i = 0; i < 4; i++) _rotate4x4(pts[i]);
+    }
+
+    int8_t w = 0;
+    int8_t h = 0;
+    _normalizePts(pts, w, h);
+    if (w <= 0 || h <= 0) continue;
+
+    const int x = (int)random(0, MATRIX_W - w + 1);
+    int y = -h;
+    while (!collides(x, y + 1, pts)) y++;
+    if (collides(x, y, pts)) break;
+
+    bool alivePiece[4] = {true, true, true, true};
+    const uint32_t pc = _introColor(strip_, (uint8_t)(type + (uint8_t)random(0, 7)));
+
+    const int yStart = -h;
+    const int yEnd = y;
+    const int dy = yEnd - yStart;
+    const int frames = (int)framesPerPiece();
+    int step = 1;
+    if (dy > 0 && frames > 1) {
+      step = dy / (frames - 1);
+      if (step < 1) step = 1;
+    }
+
+    int yy = yStart;
+    while (yy < yEnd) {
+      tickPowerBrightness(millis());
+      updateBall(x, yy, pts, alivePiece, true);
+      drawScene(x, yy, pts, alivePiece, pc, true);
+      if (abortFn && abortFn()) return;
+      if (millis() >= deadline) break;
+      if (pieceAliveCount(alivePiece) == 0) break;
+      delay((uint32_t)frameDelayMs());
+      yy += step;
+    }
+
+    if (millis() >= deadline) break;
+
+    int settleY = yy;
+    if (settleY > yEnd) settleY = yEnd;
+
+    if (pieceAliveCount(alivePiece) > 0) {
+      tickPowerBrightness(millis());
+      updateBall(x, settleY, pts, alivePiece, true);
+      drawScene(x, settleY, pts, alivePiece, pc, true);
+      if (abortFn && abortFn()) return;
+      delay((uint32_t)frameDelayMs());
+    }
+
+    for (int i = 0; i < 4; i++) {
+      if (!alivePiece[i]) continue;
+      const int xx = x + pts[i].x;
+      const int yyf = settleY + pts[i].y;
+      if (xx < 0 || xx >= MATRIX_W || yyf < 0 || yyf >= MATRIX_H) continue;
+      if (!filled[yyf][xx]) {
+        filled[yyf][xx] = true;
+        col[yyf][xx] = pc;
+        filledCount++;
+      }
+    }
+  }
+
   const uint32_t nowHold = (uint32_t)millis();
-  const uint32_t holdEnd = (deadline < (nowHold + 220U)) ? deadline : (nowHold + 220U);
+  const uint32_t holdEnd = (deadline < (nowHold + 180U)) ? deadline : (nowHold + 180U);
+  bool noPiece[4] = {false, false, false, false};
+  _IntroPt dummy[4] = {{0,0},{0,0},{0,0},{0,0}};
   while (millis() < holdEnd) {
     tickPowerBrightness(millis());
+    updateBall(-32, -32, dummy, noPiece, false);
+    drawScene(-32, -32, dummy, noPiece, strip_.Color(0, 0, 0), false);
     if (abortFn && abortFn()) return;
-    delay(10);
+    delay(12);
   }
 
   tickPowerBrightness(millis());

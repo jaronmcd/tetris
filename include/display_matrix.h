@@ -6,6 +6,8 @@
 #include "config.h"
 #include "tetris.h"
 
+class BreakoutGame;
+
 class MatrixDisplay {
 public:
   using AbortFn = bool (*)();
@@ -14,8 +16,10 @@ public:
 
   void begin();
   void bootFlash();
+  void setPaused(bool paused, uint32_t nowMs);
+  void showPauseResetHoldFade(uint32_t heldMs, uint32_t holdMsRequired);
 
-  // Call frequently (e.g., once per loop). Handles Serial-open dim mode + fades.
+  // Call frequently (e.g., once per loop). Handles brightness targeting + fades.
   void tickPowerBrightness(uint32_t nowMs);
 
   // Boot intro: rapid falling pieces that fill the screen (skippable).
@@ -23,6 +27,9 @@ public:
 
   // Boot intro title: scrolling big text (e.g., "TETRIS"). Skippable.
   void showIntroMarquee(const char* text, uint8_t scale, uint32_t maxDurationMs, AbortFn abortFn = nullptr);
+
+  // Boot intro hybrid: marquee titles + breakout-vs-tetris smash scene. Skippable.
+  void showIntroHybridArcade(uint32_t maxDurationMs, AbortFn abortFn = nullptr);
 
 
 
@@ -46,6 +53,8 @@ public:
   void showBootStats(uint8_t maxLevel, uint16_t maxChaseAttempts, AbortFn abortFn = nullptr);
 
   void render(const TetrisGame& g, uint32_t nowMs);
+  void renderGameSelectMenu(uint8_t selectedGame, uint32_t nowMs);
+  void renderBreakout(const BreakoutGame& g, uint32_t nowMs);
 
 private:
   uint16_t XY(uint8_t x, uint8_t y) const;
@@ -68,12 +77,15 @@ private:
 // Minimal numeric screens (no labels / no score)
 uint32_t dimColor(uint32_t c, uint8_t alpha) const;
 void drawDigit5x7Scaled(uint8_t digit, int16_t x, int16_t y, uint8_t scale, uint32_t color);
+void drawDigit5x7ScaledHalo(uint8_t digit, int16_t x, int16_t y, uint8_t scale,
+                            uint32_t color, uint8_t haloAlpha, bool darken, uint8_t* haloMask);
 void drawNumberCentered(uint8_t value, uint8_t scale, uint32_t color);
+void drawNumberCenteredHalo(uint8_t value, uint8_t scale, uint32_t color, uint8_t haloAlpha, bool darken);
 bool showLevelNumberScreen(uint8_t value, uint32_t bg, uint32_t fg, uint32_t durationMs, AbortFn abortFn);
 
 // MAX-level screens can optionally show a "record chase" progress meter in the
 // background based on the persistent attempt counter.
-void fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts);
+void fillMaxChaseBackground(uint32_t baseBg, uint32_t chaseBg, uint16_t maxChaseAttempts, uint32_t nowMs);
 bool showMaxLevelNumberScreen(uint8_t value,
                               uint32_t baseBg, uint32_t chaseBg,
                               uint16_t maxChaseAttempts,
@@ -99,7 +111,7 @@ private:
   uint32_t fadeStartMs_ = 0;
   uint32_t fadeDurationMs_ = 0;
   bool fadeActive_ = false;
-  bool hostLatched_ = false;
+  bool paused_ = false;
 
   Adafruit_NeoPixel strip_;
 };

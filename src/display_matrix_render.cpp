@@ -60,6 +60,7 @@ static bool     g_isFading = false;
 static bool g_highScoreRainbowMode = false;
 static bool g_bossLevelActive = false;
 static uint8_t g_bossLevelNumber = 0;
+static uint32_t g_pauseStartMs = 0;
 static uint32_t g_fadeStartMs = 0;
 static uint8_t  g_fadeFromLevel = 0;
 static uint8_t  g_fadeToLevel = 0;
@@ -85,6 +86,28 @@ static uint32_t g_milestoneBorderStartMs = 0;
 static uint32_t g_milestoneBorderDuration = MILESTONE_BORDER_REVEAL_MS;
 static uint8_t  g_milestoneFromLevel = 1;
 static uint8_t  g_milestoneToLevel = 1;
+
+void MatrixDisplay::setPaused(bool paused, uint32_t nowMs) {
+  if (paused_ == paused) return;
+
+  if (paused) {
+    paused_ = true;
+    g_pauseStartMs = nowMs;
+    return;
+  }
+
+  // Resume: keep elapsed animation progress unchanged across pause time.
+  const uint32_t pausedMs = nowMs - g_pauseStartMs;
+  if (g_isFading) g_fadeStartMs += pausedMs;
+  if (g_waterfallActive) g_waterfallStartMs += pausedMs;
+  if (g_levelOverlayActive) g_levelOverlayStartMs += pausedMs;
+  if (g_milestoneBorderActive) g_milestoneBorderStartMs += pausedMs;
+
+  // Prevent border animation catch-up jump after a long pause.
+  g_borderClockLastRealMs = nowMs;
+
+  paused_ = false;
+}
 
 // 5x7 thin-line digit font used for in-game overlay (columns, LSB=top row)
 static const uint8_t DIGITS_5x7[10][5] = {
@@ -143,7 +166,7 @@ static constexpr uint8_t NUM_BORDER_STYLES = 4;
 // Border animation changes every 10 levels:
 //  1-10: Classic (current look)
 // 11-20: Checkerboard contrast
-// 21-30: Sparkle twinkle
+// 21-30: Chain / double-helix (rounded links)
 // 31-40: Wavy pulse
 static inline uint8_t borderStyleForLevel(uint8_t level) {
   if (level < 1) level = 1;
@@ -579,25 +602,72 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
       else if (ring == 1) hue2 = (uint16_t)(hue2 + 8000u);
     }
   } else if (style == 2) {
-    // STYLE 2 (21-30): "Sparkle twinkle" — occasional white glints that pop.
-    const uint32_t tick = (uint32_t)(bt / 170);
-    const uint8_t h = hash8((uint32_t)level * 257u + (uint32_t)bx * 41u + (uint32_t)by * 97u + tick * 53u + (uint32_t)ring * 151u);
+    // STYLE 2 (21-30): "Chain / Double-Helix" — rounded links that alternate
+    // between the outer+middle rings and the middle+inner rings.
+    //
+    // This reads as a scrolling chain (or braided helix) even on a 16x16.
+    const int16_t idx = milestoneBorderIndex(bx, by);
+    const uint8_t uIdx = (idx >= 0) ? (uint8_t)idx : (uint8_t)((bx + by) & 0xFF);
 
-    // ~2–4 sparkles across the whole border at any given moment
-    if (h < 6 && ring != 2) {
-      sat = (uint8_t)(sat / 5); // subtle sparkle (desaturated)
-      int vv = (int)val + 80;
-      if (vv > 220) vv = 220;
-      val = (uint8_t)vv;
+    // Tunables:
+    // - LINK_LEN controls link size (path pixels per half-link). 7 gives 3 full links
+    //   around the 42px U-path on a 16x16.
+    // - scroll speed uses border-time so it naturally ramps with level.
+    static constexpr uint8_t LINK_LEN = 7;
+    const uint8_t scroll = (uint8_t)((bt >> 8) & 0xFF); // ~1 step / 256ms at full speed
+
+    uint8_t local = (uint8_t)(uIdx + scroll);
+    local = (uint8_t)(local % (uint8_t)(2u * LINK_LEN));
+    const bool innerLink = (local >= LINK_LEN);
+    local = (uint8_t)(local % LINK_LEN);
+
+    // local: 0..LINK_LEN-1 -> 0..255
+    const uint8_t t = (LINK_LEN <= 1)
+                        ? 0
+                        : (uint8_t)(((uint16_t)local * 255u) / (uint16_t)(LINK_LEN - 1));
+
+    const uint8_t center = tri8(t);              // bright in the middle of the link
+    const uint8_t ends   = (uint8_t)(255 - center); // bright at the ends
+
+    // Build a rounded "loop": ends on one ring, belly on the adjacent ring.
+    uint8_t intensity = 0;
+    if (!innerLink) {
+      // Outer loop (like a chain link sitting "outside")
+      if (ring == 0) intensity = ends;
+      else if (ring == 1) intensity = center;
+      else intensity = 14;
     } else {
-      // Gentle scintillation (keeps it lively even when not sparkling)
-      const int shimmer = (int)tri8((uint8_t)(((bt >> 3) + (bx * 11) + (by * 7)) & 0xFF)) - 128;
-      int dv2 = (shimmer * ((ring == 0) ? 10 : (ring == 1) ? 6 : 3)) / 128;
+      // Inner loop (alternating link)
+      if (ring == 2) intensity = ends;
+      else if (ring == 1) intensity = center;
+      else intensity = 14;
+    }
 
-      int vv = (int)val + dv2;
-      if (vv < vMin) vv = vMin;
-      if (vv > vMax) vv = vMax;
-      val = (uint8_t)vv;
+    // Map intensity -> value. Give this decade a wider brightness window so it
+    // reads clearly as a new, distinct border.
+    int vmax2 = vMax + ((ring == 0) ? 24 : (ring == 1) ? 30 : 55);
+    if (vmax2 > 220) vmax2 = 220;
+
+    int vv = vMin + (int)(((uint16_t)intensity * (uint16_t)(vmax2 - vMin)) / 255u);
+    if (vv < vMin) vv = vMin;
+    if (vv > vmax2) vv = vmax2;
+    val = (uint8_t)vv;
+
+    // Slight saturation and hue twist to help the links feel "round".
+    if (ring != 2) {
+      int ds = ((int)intensity - 128) * 18 / 128;
+      int s = (int)sat + ds;
+      if (s < 0) s = 0;
+      if (s > 255) s = 255;
+      sat = (uint8_t)s;
+
+      if (!mutedFirstLevel) {
+        int dh = innerLink ? 1800 : -1800;
+        hue2 = (uint16_t)(hue2 + dh);
+      }
+    } else {
+      // Keep the innermost ring a touch less saturated for depth.
+      sat = (uint8_t)(((uint16_t)sat * 210u) / 255u);
     }
   } else if (style == 3) {
     // STYLE 3 (31-40): "Wavy pulse" — a traveling wave that shifts brightness + hue.
@@ -677,27 +747,31 @@ uint32_t MatrixDisplay::solidBorderForLevel(uint8_t level, uint8_t bx, uint8_t b
   }
 
   // ✅ This is the “band” glint you were looking for
-  if (ring == 0) {
-    uint8_t band = (uint8_t)(((bt / 22) + (bx * 9) + (by * 5)) & 0xFF);
+  // For the chain/helix decade (style 2), we skip this so the rounded links read
+  // more clearly and feel more "distinct" from the first two borders.
+  if (style != 2) {
+    if (ring == 0) {
+      uint8_t band = (uint8_t)(((bt / 22) + (bx * 9) + (by * 5)) & 0xFF);
 
-    if (band < 34) {
-      int boost = (34 - band) * 3;
-      int vv = (int)val + boost;
-      if (vv > 190) vv = 190;
-      val = (uint8_t)vv;
-    } else if (band > 222) {
-      int boost = (band - 222) * 3;
-      int vv = (int)val + boost;
-      if (vv > 190) vv = 190;
-      val = (uint8_t)vv;
-    }
-  } else if (ring == 1) {
-    uint8_t band = (uint8_t)(((bt / 28) + (bx * 7) + (by * 4)) & 0xFF);
-    if (band < 30) {
-      int boost = (30 - band) * 2;
-      int vv = (int)val + boost;
-      if (vv > 150) vv = 150;
-      val = (uint8_t)vv;
+      if (band < 34) {
+        int boost = (34 - band) * 3;
+        int vv = (int)val + boost;
+        if (vv > 190) vv = 190;
+        val = (uint8_t)vv;
+      } else if (band > 222) {
+        int boost = (band - 222) * 3;
+        int vv = (int)val + boost;
+        if (vv > 190) vv = 190;
+        val = (uint8_t)vv;
+      }
+    } else if (ring == 1) {
+      uint8_t band = (uint8_t)(((bt / 28) + (bx * 7) + (by * 4)) & 0xFF);
+      if (band < 30) {
+        int boost = (30 - band) * 2;
+        int vv = (int)val + boost;
+        if (vv > 150) vv = 150;
+        val = (uint8_t)vv;
+      }
     }
   }
 
