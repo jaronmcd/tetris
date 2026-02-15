@@ -154,7 +154,8 @@ static bool g_bootSkipped = false;
 static bool bootAbort() {
   input.update();
   Actions a = input.readActions();
-  if (anyHumanAction(a)) {
+  // Keep START-to-skip reliable even when held through boot.
+  if (a.startHeld || anyHumanAction(a)) {
     g_bootSkipped = true;
     return true;
   }

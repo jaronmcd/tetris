@@ -26,24 +26,61 @@ void MatrixDisplay::renderGameSelectMenu(uint8_t selectedGame, uint32_t nowMs) {
     setPixel((MATRIX_W / 2), y, split);
   }
 
-  // Left icon: mini "falling block" scene (Tetris)
-  const uint32_t tStack = strip_.Color(45, 160, 255);
+  // Left icon: mini "falling block" scene (Tetris), no text glyph.
+  const uint32_t tStackA = strip_.Color(45, 160, 255);
+  const uint32_t tStackB = strip_.Color(30, 115, 225);
   const uint32_t tPiece = strip_.Color(255, 190, 40);
-  for (uint8_t x = 1; x <= 6; x++) {
-    setPixel(x, 13, tStack);
-  }
-  setPixel(1, 12, tStack);
-  setPixel(2, 12, tStack);
-  setPixel(5, 12, tStack);
-  setPixel(6, 12, tStack);
 
-  const uint8_t drop = (uint8_t)((nowMs / 170u) % 6u);
-  const uint8_t py = (uint8_t)(4u + drop);
-  setPixel(2, py, tPiece);
-  setPixel(3, py, tPiece);
-  setPixel(4, py, tPiece);
-  setPixel(3, (uint8_t)(py + 1u), tPiece);
-  drawChar(2, 1, 'T', strip_.Color(180, 200, 255));
+  for (uint8_t x = 1; x <= 6; x++) {
+    setPixel(x, 13, ((x & 1u) == 0u) ? tStackA : tStackB);
+  }
+  setPixel(1, 12, tStackA);
+  setPixel(2, 12, tStackB);
+  setPixel(4, 12, tStackA);
+  setPixel(5, 12, tStackB);
+  setPixel(2, 11, tStackA);
+  setPixel(5, 11, tStackB);
+
+  const uint8_t pieceKind = (uint8_t)((nowMs / 1200u) % 4u); // I, T, L, O
+  const int8_t sway = (int8_t)((nowMs / 480u) % 3u) - 1;      // -1, 0, +1
+  const uint8_t drop = (uint8_t)((nowMs / 160u) % 8u);
+  const int8_t by = (int8_t)(2 + drop);
+  int8_t bx = 3 + sway;
+
+  if (pieceKind == 0 && bx > 2) bx = 2; // keep I-piece inside the panel
+
+  auto drawMiniBlock = [&](int8_t x, int8_t y) {
+    if (x >= 1 && x <= 6 && y >= 1 && y <= 13) {
+      setPixel((uint8_t)x, (uint8_t)y, tPiece);
+    }
+  };
+
+  switch (pieceKind) {
+    case 0: // I
+      drawMiniBlock(bx + 0, by);
+      drawMiniBlock(bx + 1, by);
+      drawMiniBlock(bx + 2, by);
+      drawMiniBlock(bx + 3, by);
+      break;
+    case 1: // T
+      drawMiniBlock(bx - 1, by);
+      drawMiniBlock(bx + 0, by);
+      drawMiniBlock(bx + 1, by);
+      drawMiniBlock(bx + 0, by + 1);
+      break;
+    case 2: // L
+      drawMiniBlock(bx - 1, by);
+      drawMiniBlock(bx + 0, by);
+      drawMiniBlock(bx + 1, by);
+      drawMiniBlock(bx + 1, by + 1);
+      break;
+    default: // O
+      drawMiniBlock(bx + 0, by);
+      drawMiniBlock(bx + 1, by);
+      drawMiniBlock(bx + 0, by + 1);
+      drawMiniBlock(bx + 1, by + 1);
+      break;
+  }
 
   // Right icon: mini Breakout scene
   const uint32_t bBrickA = strip_.Color(255, 110, 70);
