@@ -24,6 +24,7 @@ private:
   static void onDisconnected(GamepadPtr g);
 
   static GamepadPtr gp_;
+  bool initialized_ = false;
   RepeatKey repL_, repR_;
   bool lastA_ = false, lastB_ = false, lastY_ = false;
 };

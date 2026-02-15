@@ -31,6 +31,36 @@ If your board/matrix uses a different data pin, change it in `include/config.h`.
 
 ---
 
+## Build One (End-to-End)
+
+If you want to make one from scratch, follow this path:
+
+1. Gather parts
+   - ESP32-S3 dev board (project default: `esp32-s3-devkitc-1`)
+   - 16x16 WS2812/NeoPixel matrix
+   - 5V power supply (3A+ recommended)
+   - Data-capable USB cable
+   - Jumper wires
+   - Optional but recommended: 330-470 ohm resistor on `DIN`, 1000uF capacitor across matrix `+5V/GND`
+2. Wire it
+   - Matrix `DIN` -> ESP32 `GPIO 1`
+   - Matrix `+5V` -> 5V supply
+   - Matrix `GND` -> 5V supply ground
+   - ESP32 `GND` -> same ground as the matrix/power supply
+3. Flash firmware
+   - From this repo root:
+     ```bash
+     pio run -e esp32-s3-4mb
+     pio run -e esp32-s3-4mb -t upload
+     pio device monitor -b 115200
+     ```
+4. Pair a controller and play
+   - Connect a Bluetooth gamepad (or use serial keyboard controls listed below).
+
+Tip: If nothing lights up, check power and shared ground first, then verify `LED_PIN` in `include/config.h`.
+
+---
+
 ## Software Setup
 
 This is a **PlatformIO** project.
@@ -176,6 +206,13 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
 ---
 
+## Contributing & Security
+
+- See `CONTRIBUTING.md` for development and PR guidelines.
+- Report security issues privately as described in `SECURITY.md`.
+
+---
+
 ## License
 
-No license file is included yet. If you plan to open-source this, add a `LICENSE` file (MIT/Apache-2.0/GPL/etc.) and update this section.
+This project is licensed under the MIT License. See `LICENSE`.
