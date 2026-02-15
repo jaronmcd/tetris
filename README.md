@@ -128,9 +128,9 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 
 ## Controls
 
-### Game menu (while paused)
+### Game menu switch
 
-- Hold **SELECT/BACK/SHARE** for ~3 seconds while paused to open the game menu
+- Hold **START + SELECT/BACK/SHARE** (while playing or paused) to run a **3, 2, 1** countdown to the game menu (release either button to cancel)
 - **Left / Right**: choose game
 - **A / B / START**: launch selected game
 - Selected game becomes the new persistent boot mode
@@ -145,14 +145,16 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 - **A**: rotate
 - **B**: hard drop
 - **START**: pause/resume (screen dims while paused)
-- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to open the game menu
+- **SELECT/BACK/SHARE (while paused)**: no action by itself
+- **START + SELECT/BACK/SHARE**: pause (if needed) and run 3-second menu countdown; releasing either button cancels
 
 #### Breakout
 
 - **D‑pad Left/Right**: move paddle
 - **A / B / D‑pad Down**: launch ball (and restart after game over)
 - **START**: pause/resume
-- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds to open the game menu
+- **SELECT/BACK/SHARE (while paused)**: no action by itself
+- **START + SELECT/BACK/SHARE**: pause (if needed) and run 3-second menu countdown; releasing either button cancels
 - Idle for a few seconds to enable **Breakout AI demo mode** (any input returns to human control)
 
 ### Serial keyboard (via monitor)

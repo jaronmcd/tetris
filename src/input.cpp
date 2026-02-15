@@ -25,7 +25,7 @@ void InputManager::begin() {
 
   // Uncomment once if you want to force re-pairing during testing.
   // Do not keep this enabled in normal use, or controllers won't auto-reconnect.
-  BP32.forgetBluetoothKeys();
+  // BP32.forgetBluetoothKeys();
 }
 
 void InputManager::update() {
@@ -130,6 +130,7 @@ Actions InputManager::readGamepad() {
   if ((A || X) && !lastA_) a.rotate = true;
   if (B && !lastB_) a.drop = true;
   if (START && !lastStart_) a.togglePause = true;
+  a.startHeld = START;
   a.pauseResetHeld = RESET_HOLD;
 
   lastA_ = (A || X);
@@ -150,6 +151,7 @@ Actions InputManager::readActions() {
   out.down = s.down || g.down;
   out.drop = s.drop || g.drop;
   out.togglePause = s.togglePause || g.togglePause;
+  out.startHeld = s.startHeld || g.startHeld;
   out.pauseResetHeld = s.pauseResetHeld || g.pauseResetHeld;
   out.restart = s.restart || g.restart;
 

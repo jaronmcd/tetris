@@ -9,7 +9,8 @@ struct Actions {
   bool down = false;   // held for soft drop
   bool drop = false;   // hard drop
   bool togglePause = false;
-  bool pauseResetHeld = false;  // held while paused to trigger reset-to-intro
+  bool startHeld = false;       // START held (for START+SELECT combo tracking)
+  bool pauseResetHeld = false;  // SELECT/BACK/SHARE held (used as START combo modifier)
   bool restart = false;
 
   // Debug / commands (not treated as player input)
