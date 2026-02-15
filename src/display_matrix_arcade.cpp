@@ -127,12 +127,6 @@ void MatrixDisplay::renderBreakout(const BreakoutGame& g, uint32_t nowMs) {
     }
   }
 
-  // Life pips (just above the paddle row).
-  const uint32_t lifeC = strip_.Color(255, 90, 90);
-  for (uint8_t i = 0; i < g.lives(); i++) {
-    setPixel(i, (uint8_t)(BreakoutGame::PADDLE_Y - 1), lifeC);
-  }
-
   // Paddle with gentle pulse.
   const uint8_t paddlePulse = (uint8_t)(180u + (tri8u((uint8_t)(nowMs / 5u)) >> 3));
   const uint32_t paddleC = strip_.Color(70, paddlePulse, 230);

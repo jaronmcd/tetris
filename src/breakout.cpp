@@ -6,8 +6,8 @@ static inline int16_t iabs16(int16_t v) {
 
 // Breakout motion tuning (Q8.8 position space, per physics step).
 static constexpr uint8_t BREAKOUT_PHYSICS_STEP_MS = 20; // was 16 (slower simulation rate)
-static constexpr int16_t BREAKOUT_LAUNCH_VX[4] = {-64, -36, 36, 64}; // was {-88,-48,48,88}
-static constexpr int16_t BREAKOUT_LAUNCH_VY = -124; // was -160
+static constexpr int16_t BREAKOUT_LAUNCH_VX[4] = {-26, -14, 14, 26}; // much slower opening angles
+static constexpr int16_t BREAKOUT_LAUNCH_VY = -84; // much slower initial drop-to-bricks speed
 static constexpr int16_t BREAKOUT_MAX_ABS_VX = 160; // was 200
 static constexpr int16_t BREAKOUT_MIN_ABS_VX = 18;  // was 24
 static constexpr int16_t BREAKOUT_PADDLE_SPEEDUP_CAP_VY = -180; // was -220
