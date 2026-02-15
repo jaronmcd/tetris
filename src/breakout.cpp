@@ -6,8 +6,8 @@ static inline int16_t iabs16(int16_t v) {
 
 // Breakout motion tuning (Q8.8 position space, per physics step).
 static constexpr uint8_t BREAKOUT_PHYSICS_STEP_MS = 20; // was 16 (slower simulation rate)
-static constexpr int16_t BREAKOUT_LAUNCH_VX[4] = {-16, -8, 8, 16}; // extra-slow opening angles
-static constexpr int16_t BREAKOUT_LAUNCH_VY = -62; // extra-slow initial drop-to-bricks speed
+static constexpr int16_t BREAKOUT_LAUNCH_VX[4] = {-10, -6, 6, 10}; // ultra-slow opening angles
+static constexpr int16_t BREAKOUT_LAUNCH_VY = -48; // ultra-slow initial drop-to-bricks speed
 static constexpr int16_t BREAKOUT_MAX_ABS_VX = 160; // was 200
 static constexpr int16_t BREAKOUT_MIN_ABS_VX = 18;  // was 24
 static constexpr int16_t BREAKOUT_PADDLE_SPEEDUP_CAP_VY = -180; // was -220
@@ -17,6 +17,18 @@ int16_t BreakoutGame::clamp16(int16_t v, int16_t lo, int16_t hi) {
   if (v < lo) return lo;
   if (v > hi) return hi;
   return v;
+}
+
+static inline int16_t breakoutMaxAbsVxForScore(uint16_t score) {
+  if (score < 40) return 72;   // very calm start
+  if (score < 120) return 110; // medium pace
+  return BREAKOUT_MAX_ABS_VX;  // full pace
+}
+
+static inline int16_t breakoutMaxAbsVyForScore(uint16_t score) {
+  if (score < 40) return 86;   // very calm start
+  if (score < 120) return 126; // medium pace
+  return (int16_t)(-BREAKOUT_PADDLE_SPEEDUP_CAP_VY); // full pace
 }
 
 void BreakoutGame::begin(uint32_t nowMs) {
@@ -202,16 +214,23 @@ BreakoutGame::TickResult BreakoutGame::stepFrame() {
       const int16_t offsetQ8 = (int16_t)(ballXQ8_ - paddleCenterQ8);
       velXQ8_ = (int16_t)(velXQ8_ + offsetQ8 / 7);
 
-      if (velXQ8_ > BREAKOUT_MAX_ABS_VX) velXQ8_ = BREAKOUT_MAX_ABS_VX;
-      if (velXQ8_ < -BREAKOUT_MAX_ABS_VX) velXQ8_ = -BREAKOUT_MAX_ABS_VX;
+      const int16_t maxVx = breakoutMaxAbsVxForScore(score_);
+      if (velXQ8_ > maxVx) velXQ8_ = maxVx;
+      if (velXQ8_ < -maxVx) velXQ8_ = -maxVx;
 
-      if (iabs16(velXQ8_) < BREAKOUT_MIN_ABS_VX) {
-        velXQ8_ = (velXQ8_ < 0) ? -BREAKOUT_MIN_ABS_VX : BREAKOUT_MIN_ABS_VX;
+      int16_t minVx = BREAKOUT_MIN_ABS_VX;
+      if (minVx > maxVx) minVx = maxVx;
+      if (iabs16(velXQ8_) < minVx) {
+        velXQ8_ = (velXQ8_ < 0) ? (int16_t)(-minVx) : minVx;
       }
 
       if (velYQ8_ > BREAKOUT_PADDLE_SPEEDUP_CAP_VY) {
         velYQ8_ = (int16_t)(velYQ8_ - BREAKOUT_PADDLE_SPEEDUP_STEP);
       }
+
+      const int16_t maxVy = breakoutMaxAbsVyForScore(score_);
+      if (velYQ8_ < -maxVy) velYQ8_ = (int16_t)(-maxVy);
+      if (velYQ8_ > maxVy) velYQ8_ = maxVy;
     }
   }
 

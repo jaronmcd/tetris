@@ -143,6 +143,42 @@ void MatrixDisplay::renderBreakout(const BreakoutGame& g, uint32_t nowMs) {
   if (drawBall) {
     const uint8_t bx = g.ballX();
     const uint8_t by = g.ballY();
+
+    auto addGlow = [&](int16_t x, int16_t y, uint8_t ar, uint8_t ag, uint8_t ab) {
+      if (x < 0 || x >= (int16_t)MATRIX_W || y < 0 || y >= (int16_t)MATRIX_H) return;
+      const uint16_t idx = XY((uint8_t)x, (uint8_t)y);
+      uint32_t old = strip_.getPixelColor(idx);
+      uint16_t r = (uint16_t)((old >> 16) & 0xFF) + ar;
+      uint16_t gch = (uint16_t)((old >> 8) & 0xFF) + ag;
+      uint16_t bch = (uint16_t)(old & 0xFF) + ab;
+      if (r > 255) r = 255;
+      if (gch > 255) gch = 255;
+      if (bch > 255) bch = 255;
+      strip_.setPixelColor(idx, strip_.Color((uint8_t)r, (uint8_t)gch, (uint8_t)bch));
+    };
+
+    const int16_t vx = g.ballVelXQ8();
+    const int16_t vy = g.ballVelYQ8();
+    const int16_t sx = (vx > 10) ? 1 : (vx < -10 ? -1 : 0);
+    const int16_t sy = (vy > 10) ? 1 : (vy < -10 ? -1 : 0);
+
+    // Unlocked at level 10: velocity-only artifact (no static halo).
+    if (g.level() >= BreakoutGame::MAX_LEVEL && (sx != 0 || sy != 0)) {
+      uint16_t speed = (uint16_t)(abs(vx) + abs(vy));
+      if (speed > 180) speed = 180;
+
+      uint8_t t1r = (uint8_t)(4u + (speed / 12u));
+      uint8_t t1g = (uint8_t)(8u + (speed / 8u));
+      uint8_t t1b = (uint8_t)(14u + (speed / 5u));
+
+      uint8_t t2r = (uint8_t)(2u + (speed / 26u));
+      uint8_t t2g = (uint8_t)(4u + (speed / 18u));
+      uint8_t t2b = (uint8_t)(7u + (speed / 12u));
+
+      addGlow((int16_t)bx - sx, (int16_t)by - sy, t1r, t1g, t1b);
+      addGlow((int16_t)bx - (2 * sx), (int16_t)by - (2 * sy), t2r, t2g, t2b);
+    }
+
     setPixel(bx, by, strip_.Color(255, 255, 255));
   }
 

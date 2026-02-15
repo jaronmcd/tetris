@@ -12,6 +12,8 @@ public:
   static constexpr uint8_t BRICK_W = MATRIX_W / BRICK_COLS;
   static constexpr uint8_t PADDLE_W = 4;
   static constexpr uint8_t PADDLE_Y = MATRIX_H - 1;
+  static constexpr uint16_t POINTS_PER_LEVEL = 40; // 4 bricks * 10 points
+  static constexpr uint8_t MAX_LEVEL = 10;
 
   static_assert((MATRIX_W % BRICK_COLS) == 0, "MATRIX_W must be divisible by BRICK_COLS");
   static_assert(PADDLE_W < MATRIX_W, "PADDLE_W must fit inside matrix width");
@@ -49,6 +51,11 @@ public:
   uint8_t lives() const { return lives_; }
   uint16_t score() const { return score_; }
   uint16_t highScore() const { return highScore_; }
+  uint8_t level() const {
+    uint16_t lvl = (uint16_t)(score_ / POINTS_PER_LEVEL) + 1u;
+    if (lvl > MAX_LEVEL) lvl = MAX_LEVEL;
+    return (uint8_t)lvl;
+  }
 
 private:
   TickResult stepFrame();
