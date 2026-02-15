@@ -119,6 +119,7 @@ static void resetAdaptiveAiState() {
 static uint32_t lastHumanMs = 0;
 static bool aiMode = true;
 static bool paused = false;
+static uint32_t pauseRenderNowMs = 0;
 static uint32_t pauseResetHoldStartMs = 0;
 static bool pauseResetHoldActive = false;
 static constexpr uint32_t IDLE_TO_AI_MS = 8000;
@@ -220,9 +221,10 @@ void loop() {
 
   if (human.togglePause) {
     paused = !paused;
-    display.setPaused(paused);
+    display.setPaused(paused, now);
     pauseResetHoldStartMs = 0;
     if (paused) {
+      pauseRenderNowMs = now; // freeze render-time animations while paused
       Serial.println(">> Paused");
       if (aiMode) {
         aiMode = false;
@@ -263,7 +265,7 @@ void loop() {
       paused = false;
       pauseResetHoldStartMs = 0;
       pauseResetHoldActive = false;
-      display.setPaused(false);
+      display.setPaused(false, now);
 
       #if INTRO_ENABLED && INTRO_MARQUEE_ENABLED
       display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
@@ -296,7 +298,7 @@ void loop() {
 
     if (now - lastFrameMs >= 15) {
       lastFrameMs = now;
-      display.render(game, now);
+      display.render(game, pauseRenderNowMs);
       if (pauseResetHoldStartMs != 0) {
         display.showPauseResetHoldFade(heldMs, PAUSE_RESET_HOLD_MS);
       }

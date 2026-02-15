@@ -60,6 +60,7 @@ static bool     g_isFading = false;
 static bool g_highScoreRainbowMode = false;
 static bool g_bossLevelActive = false;
 static uint8_t g_bossLevelNumber = 0;
+static uint32_t g_pauseStartMs = 0;
 static uint32_t g_fadeStartMs = 0;
 static uint8_t  g_fadeFromLevel = 0;
 static uint8_t  g_fadeToLevel = 0;
@@ -85,6 +86,28 @@ static uint32_t g_milestoneBorderStartMs = 0;
 static uint32_t g_milestoneBorderDuration = MILESTONE_BORDER_REVEAL_MS;
 static uint8_t  g_milestoneFromLevel = 1;
 static uint8_t  g_milestoneToLevel = 1;
+
+void MatrixDisplay::setPaused(bool paused, uint32_t nowMs) {
+  if (paused_ == paused) return;
+
+  if (paused) {
+    paused_ = true;
+    g_pauseStartMs = nowMs;
+    return;
+  }
+
+  // Resume: keep elapsed animation progress unchanged across pause time.
+  const uint32_t pausedMs = nowMs - g_pauseStartMs;
+  if (g_isFading) g_fadeStartMs += pausedMs;
+  if (g_waterfallActive) g_waterfallStartMs += pausedMs;
+  if (g_levelOverlayActive) g_levelOverlayStartMs += pausedMs;
+  if (g_milestoneBorderActive) g_milestoneBorderStartMs += pausedMs;
+
+  // Prevent border animation catch-up jump after a long pause.
+  g_borderClockLastRealMs = nowMs;
+
+  paused_ = false;
+}
 
 // 5x7 thin-line digit font used for in-game overlay (columns, LSB=top row)
 static const uint8_t DIGITS_5x7[10][5] = {

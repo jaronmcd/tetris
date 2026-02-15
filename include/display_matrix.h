@@ -14,7 +14,7 @@ public:
 
   void begin();
   void bootFlash();
-  void setPaused(bool paused);
+  void setPaused(bool paused, uint32_t nowMs);
   void showPauseResetHoldFade(uint32_t heldMs, uint32_t holdMsRequired);
 
   // Call frequently (e.g., once per loop). Handles brightness targeting + fades.

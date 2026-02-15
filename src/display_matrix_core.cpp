@@ -66,10 +66,6 @@ void MatrixDisplay::tickPowerBrightness(uint32_t nowMs) {
   }
 }
 
-void MatrixDisplay::setPaused(bool paused) {
-  paused_ = paused;
-}
-
 void MatrixDisplay::begin() {
   // Start dark to avoid a bright flash, then fade up to the selected target.
   strip_.begin();
