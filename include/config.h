@@ -175,3 +175,19 @@
 // 3 = adds 1-ply next-piece lookahead (when next piece is known)
 // 4 = stronger weights + lookahead
 #define AI_SMARTNESS_MAX 4
+
+// Optional adaptive layer on top of the MAX-chase ladder.
+// This does not replace milestones; it nudges the AI based on current board stress.
+#define AI_ADAPTIVE_EVOLUTION_ENABLED true
+
+// Top-stack pressure mapping (0 = top row).
+// At/above START row the adaptive signal begins, and it reaches full by FULL row.
+#define AI_ADAPTIVE_PRESSURE_START_ROW 6
+#define AI_ADAPTIVE_PRESSURE_FULL_ROW 1
+
+// Maximum extra ramp percentage added to AI smartness blending (0..100).
+#define AI_ADAPTIVE_RAMP_BONUS_MAX_PCT 35
+
+// Temporary +1 skill boost hysteresis thresholds (0..100 adaptive signal).
+#define AI_ADAPTIVE_SKILL_BOOST_ON_PCT 80
+#define AI_ADAPTIVE_SKILL_BOOST_OFF_PCT 55

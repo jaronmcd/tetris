@@ -195,6 +195,12 @@ AI smartness ladder (tied to MAX chase progress):
 - `AI_SMARTNESS_FROM_MAX_CHASE_ENABLED` – if true, every time the MAX chase progress hits a *full* background color, the AI increases its decision quality
 - `AI_SMARTNESS_BASE` – starting skill level (1 = current baseline; 0 is intentionally a little sloppy for testing)
 - `AI_SMARTNESS_MAX` – max skill level (keeps MCU CPU usage predictable)
+- `AI_ADAPTIVE_EVOLUTION_ENABLED` – adds a board-stress adaptive layer on top of the MAX-chase ladder
+- `AI_ADAPTIVE_PRESSURE_START_ROW` – top-stack row where adaptive pressure begins
+- `AI_ADAPTIVE_PRESSURE_FULL_ROW` – top-stack row where adaptive pressure is treated as maxed
+- `AI_ADAPTIVE_RAMP_BONUS_MAX_PCT` – max extra ramp added toward the next AI skill tier
+- `AI_ADAPTIVE_SKILL_BOOST_ON_PCT` – adaptive signal threshold to temporarily add `+1` skill
+- `AI_ADAPTIVE_SKILL_BOOST_OFF_PCT` – lower threshold to drop that temporary boost (hysteresis)
 
 Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
