@@ -64,7 +64,6 @@ void MatrixDisplay::renderGameSelectMenu(uint8_t selectedGame, uint32_t nowMs) {
   const uint8_t ballX = (uint8_t)(9u + ballPhase);
   const uint8_t ballY = (uint8_t)(11u - (ballPhase >> 1));
   setPixel(ballX, ballY, strip_.Color(255, 255, 255));
-  drawChar(11, 1, 'B', strip_.Color(255, 220, 180));
 
   const uint8_t pulse = (uint8_t)(120u + (tri8u((uint8_t)(nowMs / 6u)) >> 2));
   const uint32_t hi = strip_.Color(pulse, pulse, pulse);
@@ -153,8 +152,19 @@ void MatrixDisplay::renderBreakout(const BreakoutGame& g, uint32_t nowMs) {
         setPixel(x, y, strip_.Color(0, 0, 0));
       }
     }
-    drawTextCentered(g.won() ? "WIN" : "TRY", 6, strip_.Color(255, 255, 255));
-    drawTextCentered("DROP", 11, strip_.Color(170, 170, 170));
+
+    // Wordless end-state indicator: green bar for win, red bar for loss.
+    const uint32_t stateC = g.won() ? strip_.Color(60, 255, 120)
+                                    : strip_.Color(255, 60, 60);
+    for (uint8_t y = 7; y <= 8; y++) {
+      for (uint8_t x = 5; x <= 10; x++) {
+        setPixel(x, y, stateC);
+      }
+    }
+    if (((nowMs / 280u) & 1u) == 0u) {
+      setPixel(7, 10, strip_.Color(255, 255, 255));
+      setPixel(8, 10, strip_.Color(255, 255, 255));
+    }
   }
 
   strip_.show();

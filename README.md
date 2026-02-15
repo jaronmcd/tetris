@@ -2,11 +2,12 @@
 
 A tiny, self-contained **arcade bundle** for an **ESP32** driving a **16×16 NeoPixel/WS2812 matrix**.
 
-- Start menu with **2 games**: **Tetris** and **Breakout**
+- Game menu with **2 games**: **Tetris** and **Breakout**
+- Persistent boot mode: boots directly into the last selected game (**default: Tetris**)
 - **Tetris** uses a **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
 - **Bluetooth gamepad support** via **Bluepad32** (D‑pad + buttons)
 - **Idle → AI demo mode** (kicks in after a few seconds with no input)
-- Persistent **High Score** + **High Level** stored in ESP32 **NVS/Preferences**
+- Independent persistent highscores for **Tetris** and **Breakout** (ESP32 **NVS/Preferences**)
 - Animated, level-based **border themes** that **react to the falling piece** (subtle “sphere of light”)
 - Boot splash + skippable boot stats screen
 
@@ -127,10 +128,12 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 
 ## Controls
 
-### Start menu (on boot)
+### Game menu (while paused)
 
+- Hold **SELECT/BACK/SHARE** for ~3 seconds while paused to open the game menu
 - **Left / Right**: choose game
 - **A / B / START**: launch selected game
+- Selected game becomes the new persistent boot mode
 - **Serial:** `W` / `Space` / `R` also launch from the menu
 
 ### Bluetooth gamepad (Bluepad32)
@@ -142,14 +145,14 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 - **A**: rotate
 - **B**: hard drop
 - **START**: pause/resume (screen dims while paused)
-- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to return to the game menu
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to open the game menu
 
 #### Breakout
 
 - **D‑pad Left/Right**: move paddle
 - **A / B / D‑pad Down**: launch ball (and restart after game over)
 - **START**: pause/resume
-- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds to return to the game menu
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds to open the game menu
 - Idle for a few seconds to enable **Breakout AI demo mode** (any input returns to human control)
 
 ### Serial keyboard (via monitor)
@@ -234,6 +237,14 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 - `hl` = level associated with `hs`
 - `pg` = has-played flag (used to gate "chasing the record" FX)
 - `ma` = MAX-level chase attempts counter (completed record-eligible runs since `ml` was last updated)
+
+Breakout records are stored independently in namespace `breakout`:
+
+- `hs` = Breakout high score
+
+Boot mode preference is stored in namespace `arcade`:
+
+- `bootm` = selected boot mode (`0`=Tetris, `1`=Breakout)
 
 ---
 

@@ -6,8 +6,8 @@ static inline int16_t iabs16(int16_t v) {
 
 // Breakout motion tuning (Q8.8 position space, per physics step).
 static constexpr uint8_t BREAKOUT_PHYSICS_STEP_MS = 20; // was 16 (slower simulation rate)
-static constexpr int16_t BREAKOUT_LAUNCH_VX[4] = {-26, -14, 14, 26}; // much slower opening angles
-static constexpr int16_t BREAKOUT_LAUNCH_VY = -84; // much slower initial drop-to-bricks speed
+static constexpr int16_t BREAKOUT_LAUNCH_VX[4] = {-16, -8, 8, 16}; // extra-slow opening angles
+static constexpr int16_t BREAKOUT_LAUNCH_VY = -62; // extra-slow initial drop-to-bricks speed
 static constexpr int16_t BREAKOUT_MAX_ABS_VX = 160; // was 200
 static constexpr int16_t BREAKOUT_MIN_ABS_VX = 18;  // was 24
 static constexpr int16_t BREAKOUT_PADDLE_SPEEDUP_CAP_VY = -180; // was -220
@@ -20,7 +20,30 @@ int16_t BreakoutGame::clamp16(int16_t v, int16_t lo, int16_t hi) {
 }
 
 void BreakoutGame::begin(uint32_t nowMs) {
+  loadHighScore();
   reset(nowMs);
+}
+
+void BreakoutGame::loadHighScore() {
+  prefs_.begin("breakout", true);
+  highScore_ = (uint16_t)prefs_.getUInt("hs", 0);
+  prefs_.end();
+}
+
+void BreakoutGame::formatStorage() {
+  prefs_.begin("breakout", false);
+  prefs_.clear();
+  prefs_.end();
+  highScore_ = 0;
+}
+
+bool BreakoutGame::saveHighScore() {
+  if (score_ <= highScore_) return false;
+  highScore_ = score_;
+  prefs_.begin("breakout", false);
+  prefs_.putUInt("hs", (uint32_t)highScore_);
+  prefs_.end();
+  return true;
 }
 
 void BreakoutGame::resetBricks() {
@@ -47,6 +70,7 @@ void BreakoutGame::reset(uint32_t nowMs) {
 
   lives_ = 3;
   score_ = 0;
+  allowHighScore_ = true;
   waitingLaunch_ = true;
   gameOver_ = false;
   won_ = false;
@@ -209,8 +233,9 @@ BreakoutGame::TickResult BreakoutGame::stepFrame() {
   return tr;
 }
 
-BreakoutGame::TickResult BreakoutGame::tick(uint32_t nowMs, const Actions& a) {
+BreakoutGame::TickResult BreakoutGame::tick(uint32_t nowMs, const Actions& a, bool allowHighScore) {
   TickResult out;
+  allowHighScore_ = allowHighScore;
 
   if (a.left) movePaddle(-1);
   if (a.right) movePaddle(+1);
@@ -246,6 +271,9 @@ BreakoutGame::TickResult BreakoutGame::tick(uint32_t nowMs, const Actions& a) {
     if (tr.lostLife) out.lostLife = true;
     if (tr.won) out.won = true;
     if (tr.gameOver) out.gameOver = true;
+    if (tr.gameOver && allowHighScore_ && saveHighScore()) {
+      out.newHighScore = true;
+    }
 
     if (gameOver_ || waitingLaunch_) break;
   }
