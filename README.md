@@ -7,6 +7,7 @@ A tiny, self-contained **arcade bundle** for an **ESP32** driving a **16×16 Neo
 - **Tetris** uses a **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
 - **Bluetooth gamepad support** via **Bluepad32** (D‑pad + buttons)
 - **Idle → AI demo mode** (kicks in after a few seconds with no input)
+- Display settings screen: adjust brightness + screen rotation
 - Independent persistent highscores for **Tetris** and **Breakout** (ESP32 **NVS/Preferences**)
 - Animated, level-based **border themes** that **react to the falling piece** (subtle “sphere of light”)
 - Boot splash + skippable boot stats screen
@@ -130,11 +131,19 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 
 ### Game menu switch
 
-- Hold **START + SELECT/BACK/SHARE** (while playing or paused) to run a **3, 2, 1** countdown to the game menu (release either button to cancel)
+- While **paused**, hold **SELECT/BACK/SHARE** to run a **3, 2, 1** countdown to the game menu (release to cancel)
 - **Left / Right**: choose game
 - **A / B / START**: launch selected game
 - Selected game becomes the new persistent boot mode
+- In game menu: hold **SELECT/BACK/SHARE** for ~3 seconds to open **Display Settings**
 - **Serial:** `W` / `Space` / `R` also launch from the menu
+
+### Display settings (from game menu)
+
+- **Up / Down**: brightness up/down
+- **Left / Right**: rotate screen (0 / 90 / 180 / 270)
+- Hold **SELECT/BACK/SHARE** for ~2.5 seconds to restart to intro (TV-style power-off animation, no MCU reboot)
+- **A / B / START**: exit settings and return to game menu
 
 ### Bluetooth gamepad (Bluepad32)
 
@@ -145,16 +154,14 @@ If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor
 - **A**: rotate
 - **B**: hard drop
 - **START**: pause/resume (screen dims while paused)
-- **SELECT/BACK/SHARE (while paused)**: no action by itself
-- **START + SELECT/BACK/SHARE**: pause (if needed) and run 3-second menu countdown; releasing either button cancels
+- **SELECT/BACK/SHARE** (while paused): run 3-second menu countdown; releasing cancels
 
 #### Breakout
 
 - **D‑pad Left/Right**: move paddle
 - **A / B / D‑pad Down**: launch ball (and restart after game over)
 - **START**: pause/resume
-- **SELECT/BACK/SHARE (while paused)**: no action by itself
-- **START + SELECT/BACK/SHARE**: pause (if needed) and run 3-second menu countdown; releasing either button cancels
+- **SELECT/BACK/SHARE** (while paused): run 3-second menu countdown; releasing cancels
 - Idle for a few seconds to enable **Breakout AI demo mode** (any input returns to human control)
 
 ### Serial keyboard (via monitor)

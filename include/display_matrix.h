@@ -16,8 +16,16 @@ public:
 
   void begin();
   void bootFlash();
+  void showTvPowerOff();
   void setPaused(bool paused, uint32_t nowMs);
   void showPauseResetHoldFade(uint32_t heldMs, uint32_t holdMsRequired);
+  void renderSettingsScreen(uint32_t nowMs);
+
+  uint8_t userBrightness() const { return userBrightness_; }
+  void adjustUserBrightness(int8_t delta);
+
+  uint8_t displayRotation() const { return rotationQuarterTurns_; }
+  void rotateDisplay(int8_t quarterTurnsDelta);
 
   // Call frequently (e.g., once per loop). Handles brightness targeting + fades.
   void tickPowerBrightness(uint32_t nowMs);
@@ -101,6 +109,8 @@ bool showMaxLevelNumberScreen(uint8_t value,
 
   uint32_t arcadeBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
   uint32_t solidLevelBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
+  void loadDisplaySettings();
+  void saveDisplaySettings() const;
 
 private:
   // Brightness / fade state
@@ -112,6 +122,8 @@ private:
   uint32_t fadeDurationMs_ = 0;
   bool fadeActive_ = false;
   bool paused_ = false;
+  uint8_t userBrightness_ = (uint8_t)BRIGHTNESS;
+  uint8_t rotationQuarterTurns_ = 0; // 0=0, 1=90 CW, 2=180, 3=270 CW
 
   Adafruit_NeoPixel strip_;
 };

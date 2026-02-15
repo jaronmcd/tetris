@@ -20,6 +20,69 @@ static const uint8_t DIGITS_5x7[10][5] = {
   {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
 };
 
+void MatrixDisplay::showTvPowerOff() {
+  // Gradually crush the current frame toward black.
+  for (uint8_t step = 0; step < 4; step++) {
+    for (uint16_t i = 0; i < NUM_LEDS; i++) {
+      uint32_t old = strip_.getPixelColor(i);
+      uint8_t r = (uint8_t)((old >> 16) & 0xFF);
+      uint8_t g = (uint8_t)((old >> 8) & 0xFF);
+      uint8_t b = (uint8_t)(old & 0xFF);
+      r = (uint8_t)((uint16_t)r * 145u / 255u);
+      g = (uint8_t)((uint16_t)g * 145u / 255u);
+      b = (uint8_t)((uint16_t)b * 145u / 255u);
+      strip_.setPixelColor(i, strip_.Color(r, g, b));
+    }
+    strip_.show();
+    delay(18);
+  }
+
+  const uint32_t lineColor = strip_.Color(245, 245, 255);
+  const int16_t midY = (int16_t)(MATRIX_H / 2);
+  const int16_t topMidY = (int16_t)((MATRIX_H - 1) / 2);
+
+  // Vertical collapse toward the center line.
+  for (int16_t h = (int16_t)MATRIX_H; h >= 1; h -= 2) {
+    strip_.clear();
+    int16_t y0 = (int16_t)((MATRIX_H - h) / 2);
+    int16_t y1 = (int16_t)(y0 + h - 1);
+    for (int16_t x = 0; x < (int16_t)MATRIX_W; x++) {
+      setPixel(x, y0, lineColor);
+      setPixel(x, y1, lineColor);
+    }
+    strip_.show();
+    delay(22);
+  }
+
+  // Horizontal collapse to a center dot.
+  int16_t left = 0;
+  int16_t right = (int16_t)MATRIX_W - 1;
+  while (left <= right) {
+    strip_.clear();
+    for (int16_t x = left; x <= right; x++) {
+      setPixel(x, topMidY, lineColor);
+      setPixel(x, midY, lineColor);
+    }
+    strip_.show();
+    delay(16);
+    left++;
+    right--;
+  }
+
+  // Final white dot fade.
+  for (int alpha = 255; alpha >= 0; alpha -= 28) {
+    strip_.clear();
+    uint32_t c = dimColor(lineColor, (uint8_t)alpha);
+    setPixel((int16_t)(MATRIX_W / 2), topMidY, c);
+    setPixel((int16_t)(MATRIX_W / 2), midY, c);
+    strip_.show();
+    delay(18);
+  }
+
+  strip_.clear();
+  strip_.show();
+}
+
 
 uint32_t MatrixDisplay::dimColor(uint32_t c, uint8_t alpha) const {
   uint8_t r = (c >> 16) & 0xFF;
@@ -731,6 +794,8 @@ static uint32_t _introColor(Adafruit_NeoPixel& strip, uint8_t id) {
   }
 }
 
+static bool _abortableDelayMs(uint32_t delayMs, MatrixDisplay::AbortFn abortFn);
+
 void MatrixDisplay::showIntroDropFill(uint32_t maxDurationMs, AbortFn abortFn) {
 #if !INTRO_ENABLED
   (void)maxDurationMs;
@@ -852,7 +917,7 @@ void MatrixDisplay::showIntroDropFill(uint32_t maxDurationMs, AbortFn abortFn) {
     const int yEnd = y;
     const int dy = yEnd - yStart;
     const int frames = (int)framesPerPiece();
-const int step = (dy <= 0) ? 1 : max(1, dy / (frames - 1));
+    const int step = (dy <= 0) ? 1 : max(1, dy / (frames - 1));
 
     const uint32_t pc = _introColor(strip_, type);
 
@@ -860,14 +925,14 @@ const int step = (dy <= 0) ? 1 : max(1, dy / (frames - 1));
       tickPowerBrightness(millis());
       drawScene(x, yy, pts, pc, true);
       if (abortFn && abortFn()) return;
-      delay((uint32_t)frameDelayMs());
+      if (_abortableDelayMs((uint32_t)frameDelayMs(), abortFn)) return;
     }
 
     // Final landing frame
     tickPowerBrightness(millis());
     drawScene(x, yEnd, pts, pc, true);
     if (abortFn && abortFn()) return;
-    delay((uint32_t)frameDelayMs());
+    if (_abortableDelayMs((uint32_t)frameDelayMs(), abortFn)) return;
 
     // Merge into filled buffer
     for (int i = 0; i < 4; i++) {
@@ -903,7 +968,7 @@ const int step = (dy <= 0) ? 1 : max(1, dy / (frames - 1));
         strip_.show();
 
         if (abortFn && abortFn()) return;
-        delay((uint32_t)max((int)1, (int)rampU16(5, 1, progress1024())));
+        if (_abortableDelayMs((uint32_t)max((int)1, (int)rampU16(5, 1, progress1024())), abortFn)) return;
         if (millis() >= deadline) break;
       }
       if (millis() >= deadline) break;
@@ -913,10 +978,10 @@ const int step = (dy <= 0) ? 1 : max(1, dy / (frames - 1));
   // Brief hold on the filled screen
   const uint32_t nowHold = (uint32_t)millis();
   const uint32_t holdEnd = (deadline < (nowHold + 180U)) ? deadline : (nowHold + 180U);
-while (millis() < holdEnd) {
+  while (millis() < holdEnd) {
     tickPowerBrightness(millis());
     if (abortFn && abortFn()) return;
-    delay(10);
+    if (_abortableDelayMs(10U, abortFn)) return;
   }
   // End with a "bang": a few bright flashes + a quick expanding ring.
   for (int i = 0; i < (int)INTRO_BANG_FLASHES; i++) {
@@ -925,7 +990,7 @@ while (millis() < holdEnd) {
     strip_.fill(strip_.Color(255, 255, 255));
     strip_.show();
     if (abortFn && abortFn()) return;
-    delay((uint32_t)INTRO_BANG_FLASH_MS);
+    if (_abortableDelayMs((uint32_t)INTRO_BANG_FLASH_MS, abortFn)) return;
 
     tickPowerBrightness(millis());
     // Back to the filled scene (repaint)
@@ -937,7 +1002,7 @@ while (millis() < holdEnd) {
     }
     strip_.show();
     if (abortFn && abortFn()) return;
-    delay((uint32_t)INTRO_BANG_FLASH_MS);
+    if (_abortableDelayMs((uint32_t)INTRO_BANG_FLASH_MS, abortFn)) return;
   }
 
   // Expanding ring from center
@@ -964,7 +1029,7 @@ while (millis() < holdEnd) {
     }
     strip_.show();
     if (abortFn && abortFn()) return;
-    delay((uint32_t)INTRO_BANG_RING_MS);
+    if (_abortableDelayMs((uint32_t)INTRO_BANG_RING_MS, abortFn)) return;
   }
 
   // Clean exit to game
@@ -1004,6 +1069,16 @@ static inline uint16_t _rampU16(uint16_t a, uint16_t b, uint16_t p1024) {
   if (v < 0) return 0;
   if (v > 65535) return 65535;
   return (uint16_t)v;
+}
+
+static bool _abortableDelayMs(uint32_t delayMs, MatrixDisplay::AbortFn abortFn) {
+  while (delayMs > 0U) {
+    const uint32_t chunk = (delayMs > 8U) ? 8U : delayMs;
+    delay(chunk);
+    delayMs -= chunk;
+    if (abortFn && abortFn()) return true;
+  }
+  return false;
 }
 
 void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t maxDurationMs, AbortFn abortFn) {
@@ -1075,7 +1150,7 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
 
     const uint16_t p = (totalSteps <= 1) ? 1024 : (uint16_t)((uint32_t)step * 1024U / (uint32_t)(totalSteps - 1));
     const uint16_t d = _rampU16((uint16_t)INTRO_MARQUEE_SPEED_MS_START, (uint16_t)INTRO_MARQUEE_SPEED_MS_END, p);
-    delay((uint32_t)(d < 1 ? 1 : d));
+    if (_abortableDelayMs((uint32_t)(d < 1 ? 1 : d), abortFn)) return;
   }
 
   // Smooth outro: brief hold on the *current* frame (no reposition/jump), then
@@ -1088,7 +1163,7 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     while (millis() < holdEnd) {
       tickPowerBrightness(millis());
       if (abortFn && abortFn()) return;
-      delay(10);
+      if (_abortableDelayMs(10U, abortFn)) return;
     }
   }
 
@@ -1100,7 +1175,7 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     const uint8_t denom = (INTRO_MARQUEE_FADE_FRAMES <= 1) ? 1U : (uint8_t)(INTRO_MARQUEE_FADE_FRAMES - 1);
     const uint8_t a = (uint8_t)(255 - (uint16_t)i * 255U / (uint16_t)denom);
     drawTextAt(lastX, scaleColor(white, a));
-    delay((uint32_t)INTRO_MARQUEE_FADE_FRAME_MS);
+    if (_abortableDelayMs((uint32_t)INTRO_MARQUEE_FADE_FRAME_MS, abortFn)) return;
   }
 
   tickPowerBrightness(millis());

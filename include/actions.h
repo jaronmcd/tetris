@@ -5,12 +5,13 @@
 struct Actions {
   bool left = false;
   bool right = false;
+  bool up = false;     // held for settings adjustment
   bool rotate = false;
   bool down = false;   // held for soft drop
   bool drop = false;   // hard drop
   bool togglePause = false;
-  bool startHeld = false;       // START held (for START+SELECT combo tracking)
-  bool pauseResetHeld = false;  // SELECT/BACK/SHARE held (used as START combo modifier)
+  bool startHeld = false;       // START held (used for boot-skip detection)
+  bool pauseResetHeld = false;  // SELECT/BACK/SHARE held (menu/settings hold trigger)
   bool restart = false;
 
   // Debug / commands (not treated as player input)
