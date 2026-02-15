@@ -2,9 +2,13 @@
 #include <stdint.h>
 
 // ======================
-// NeoPixel (your known-good pin)
+// NeoPixel data pin
 // ======================
-#define LED_PIN 1
+// Default is for [env:esp32dev-4mb] (GPIO23 on common ESP32 DevKit boards).
+// Override per board via build_flags: -DLED_PIN=<gpio>
+#ifndef LED_PIN
+#define LED_PIN 23
+#endif
 
 #define MATRIX_W 16
 #define MATRIX_H 16
@@ -14,21 +18,18 @@
 #define BRIGHTNESS 95
 
 // ======================
-// USB power / dev safety
-// ======================
-// Goal: full brightness on a USB charger, reduced brightness when a PC/tool opens
-// the USB-CDC serial port (helps avoid USB port current limits / glare during development).
-// NOTE: intentionally not MCU-USB-stack-specific; it keys off Serial being opened.
-#define USB_BRIGHTNESS_AUTO_ENABLED true
-#define USB_BRIGHTNESS_WHEN_HOST 45
-#define USB_BRIGHTNESS_HOST_LATCH true
-
-// ======================
 // Brightness fade
 // ======================
 // Start at 0 on boot and fade to the selected target.
 #define BRIGHTNESS_FADE_UP_MS 900
 #define BRIGHTNESS_FADE_DOWN_MS 280
+
+// ======================
+// Pause dim
+// ======================
+// Dim the matrix while gameplay is paused.
+#define PAUSE_DIM_ENABLED true
+#define PAUSE_BRIGHTNESS_WHEN_PAUSED 22
 
 // ======================
 // Boot intro: drop-fill + speedup + bang
@@ -132,19 +133,6 @@
 #define MAX_LEVEL_CHASE_PROGRESS_ANIM_ALPHA 45
 // Optional trailing softer row behind the highlight (0..255).
 #define MAX_LEVEL_CHASE_PROGRESS_ANIM_TAIL_ALPHA 20
-
-
-// ======================
-// USB power / dev safety
-// ======================
-// Goal: use full brightness on a USB charger, but reduce brightness when a PC/tool opens
-// the USB-CDC serial port (helps avoid USB port current limits / glare during development).
-// NOTE: This is intentionally not MCU-USB-stack-specific; it keys off Serial being opened.
-
-// ======================
-// Brightness fade
-// ======================
-// Start at 0 on boot and fade to the selected target.
 
 
 // Wiring layout

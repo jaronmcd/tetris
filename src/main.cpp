@@ -26,10 +26,14 @@ static uint8_t lastAutoAiRampPct = 255;
 // Demo mode timing
 static uint32_t lastHumanMs = 0;
 static bool aiMode = true;
+static bool paused = false;
+static uint32_t pauseResetHoldStartMs = 0;
+static bool pauseResetHoldActive = false;
 static constexpr uint32_t IDLE_TO_AI_MS = 8000;
+static constexpr uint32_t PAUSE_RESET_HOLD_MS = 3000;
 
 static inline bool anyHumanAction(const Actions& a) {
-  return a.left || a.right || a.rotate || a.down || a.drop || a.restart;
+  return a.left || a.right || a.rotate || a.down || a.drop || a.togglePause || a.restart;
 }
 
 // Boot skip state
@@ -117,6 +121,89 @@ void loop() {
   if (human.aiProfileSet >= 0) {
     ai.setProfile((uint8_t)human.aiProfileSet);
     human.aiProfileSet = -1;
+  }
+
+  if (human.togglePause) {
+    paused = !paused;
+    display.setPaused(paused);
+    pauseResetHoldStartMs = 0;
+    if (paused) {
+      Serial.println(">> Paused");
+      if (aiMode) {
+        aiMode = false;
+        ai.reset();
+      }
+    } else {
+      Serial.println(">> Resumed");
+      game.debugResyncTimers(now);
+      lastHumanMs = now;
+    }
+  }
+
+  if (paused) {
+    uint32_t heldMs = 0;
+    if (human.pauseResetHeld) {
+      if (pauseResetHoldStartMs == 0) pauseResetHoldStartMs = now;
+      if (!pauseResetHoldActive) {
+        pauseResetHoldActive = true;
+        Serial.println(">> Hold reset started");
+      }
+      heldMs = now - pauseResetHoldStartMs;
+    } else {
+      if (pauseResetHoldActive) {
+        pauseResetHoldActive = false;
+        Serial.println(">> Hold reset canceled");
+      }
+      pauseResetHoldStartMs = 0;
+    }
+
+    // Serial restart remains as a debug/development shortcut.
+    if (human.restart || heldMs >= PAUSE_RESET_HOLD_MS) {
+      if (human.restart) {
+        Serial.println(">> Restarting from pause (serial)...");
+      } else {
+        Serial.println(">> Pause reset hold complete. Returning to intro...");
+      }
+
+      paused = false;
+      pauseResetHoldStartMs = 0;
+      pauseResetHoldActive = false;
+      display.setPaused(false);
+
+      #if INTRO_ENABLED && INTRO_MARQUEE_ENABLED
+      display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
+      #endif
+      #if INTRO_ENABLED
+      display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+      #endif
+      display.bootFlash();
+      #if BOOT_STATS_ENABLED
+      display.showBootStats(game.maxLevel(), game.maxLevelChaseAttempts(), &bootAbort);
+      #endif
+
+      game.reset();
+      uint32_t afterMs = millis();
+      game.debugResyncTimers(afterMs);
+      display.tickPowerBrightness(afterMs);
+      lastHumanMs = afterMs;
+      lastFrameMs = afterMs;
+
+      for (int i = 0; i < 3; i++) {
+        input.update();
+        input.readActions();
+        delay(15);
+      }
+      return;
+    }
+
+    if (now - lastFrameMs >= 15) {
+      lastFrameMs = now;
+      display.render(game, now);
+      if (pauseResetHoldStartMs != 0) {
+        display.showPauseResetHoldFade(heldMs, PAUSE_RESET_HOLD_MS);
+      }
+    }
+    return;
   }
 
 

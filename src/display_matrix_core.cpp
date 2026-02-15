@@ -5,16 +5,14 @@
 MatrixDisplay::MatrixDisplay() : strip_(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800) {}
 
 
-
-static inline uint8_t chooseBrightnessTarget(bool& hostLatched) {
-#if USB_BRIGHTNESS_AUTO_ENABLED
-  const bool hostSignal = (bool)Serial; // true when USB-CDC port is opened by host
-  if (USB_BRIGHTNESS_HOST_LATCH && hostSignal) {
-    hostLatched = true;
+static inline uint8_t chooseBrightnessTarget(bool paused) {
+  uint8_t target = (uint8_t)BRIGHTNESS;
+#if PAUSE_DIM_ENABLED
+  if (paused && target > (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED) {
+    target = (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED;
   }
-  if (hostLatched || hostSignal) return (uint8_t)USB_BRIGHTNESS_WHEN_HOST;
 #endif
-  return (uint8_t)BRIGHTNESS;
+  return target;
 }
 
 static inline uint8_t lerpU8(uint8_t a, uint8_t b, uint32_t num, uint32_t den) {
@@ -27,7 +25,7 @@ static inline uint8_t lerpU8(uint8_t a, uint8_t b, uint32_t num, uint32_t den) {
 }
 
 void MatrixDisplay::tickPowerBrightness(uint32_t nowMs) {
-  const uint8_t target = chooseBrightnessTarget(hostLatched_);
+  const uint8_t target = chooseBrightnessTarget(paused_);
 
   // Start a new fade if target changes.
   if (target != brightnessTarget_) {
@@ -68,6 +66,10 @@ void MatrixDisplay::tickPowerBrightness(uint32_t nowMs) {
   }
 }
 
+void MatrixDisplay::setPaused(bool paused) {
+  paused_ = paused;
+}
+
 void MatrixDisplay::begin() {
   // Start dark to avoid a bright flash, then fade up to the selected target.
   strip_.begin();
@@ -77,7 +79,6 @@ void MatrixDisplay::begin() {
 
   brightnessApplied_ = 0;
   brightnessTarget_ = 0;
-  hostLatched_ = false;
   fadeActive_ = false;
 
   // Kick the first fade.
@@ -114,4 +115,3 @@ uint32_t MatrixDisplay::rgb(uint32_t rrggbb) const {
   uint8_t b = (rrggbb) & 0xFF;
   return strip_.Color(r, g, b);
 }
-

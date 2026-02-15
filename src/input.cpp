@@ -123,16 +123,18 @@ Actions InputManager::readGamepad() {
   bool A = gp_->a();
   bool X = gp_->x();
   bool B = gp_->b();
-  bool Y = gp_->y();
   bool START = gp_->miscStart();
+  // Different controllers expose the "secondary menu" key under different misc slots.
+  const bool RESET_HOLD = gp_->miscSelect() || gp_->miscBack() || gp_->miscCapture();
 
   if ((A || X) && !lastA_) a.rotate = true;
   if (B && !lastB_) a.drop = true;
-  if ((Y || START) && !lastY_) a.restart = true;
+  if (START && !lastStart_) a.togglePause = true;
+  a.pauseResetHeld = RESET_HOLD;
 
   lastA_ = (A || X);
   lastB_ = B;
-  lastY_ = (Y || START);
+  lastStart_ = START;
 
   return a;
 }
@@ -147,6 +149,8 @@ Actions InputManager::readActions() {
   out.rotate = s.rotate || g.rotate;
   out.down = s.down || g.down;
   out.drop = s.drop || g.drop;
+  out.togglePause = s.togglePause || g.togglePause;
+  out.pauseResetHeld = s.pauseResetHeld || g.pauseResetHeld;
   out.restart = s.restart || g.restart;
 
   // Commands (serial-only)
