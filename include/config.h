@@ -66,7 +66,7 @@
 // ======================
 // Boot intro: hybrid arcade scene (Tetris + Breakout)
 // ======================
-#define INTRO_HYBRID_ENABLED true
+#define INTRO_HYBRID_ENABLED false
 // Total time budget for the full hybrid intro sequence.
 #define INTRO_HYBRID_MAX_MS 7000
 // Per-title marquee budget ("TETRIS", then "BREAKOUT").

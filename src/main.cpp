@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Preferences.h>
 #include "actions.h"
 #include "tetris.h"
 #include "display_matrix.h"
@@ -14,7 +13,6 @@ static InputManager input;
 static TetrisAI ai;
 static BreakoutAI breakoutAi;
 static BreakoutGame breakout;
-static Preferences bootModePrefs;
 
 enum class GameMode : uint8_t {
   Menu = 0,
@@ -24,7 +22,6 @@ enum class GameMode : uint8_t {
 
 static GameMode g_mode = GameMode::Menu;
 static uint8_t g_menuSelection = 0;
-static uint8_t g_persistedBootMode = 0; // 0=tetris(default), 1=breakout
 
 static uint32_t lastFrameMs = 0;
 
@@ -168,28 +165,10 @@ static inline bool menuConfirmAction(const Actions& a) {
   return a.rotate || a.drop || a.down || a.togglePause || a.restart;
 }
 
-static inline uint8_t normalizeBootMode(uint8_t v) {
-  return (v == 1u) ? 1u : 0u;
-}
-
-static void loadBootModePref() {
-  bootModePrefs.begin("arcade", true);
-  g_persistedBootMode = normalizeBootMode((uint8_t)bootModePrefs.getUChar("bootm", 0));
-  bootModePrefs.end();
-  g_menuSelection = g_persistedBootMode;
-}
-
-static void saveBootModePref(uint8_t mode) {
-  mode = normalizeBootMode(mode);
-  g_persistedBootMode = mode;
-  bootModePrefs.begin("arcade", false);
-  bootModePrefs.putUChar("bootm", mode);
-  bootModePrefs.end();
-}
-
 static void enterMenu(uint32_t nowMs) {
   g_mode = GameMode::Menu;
-  g_menuSelection = g_persistedBootMode;
+  // Keep startup focused on Tetris. Breakout is intentionally only in this menu.
+  g_menuSelection = 0;
 
   paused = false;
   pauseResetHoldStartMs = 0;
@@ -216,7 +195,7 @@ static void startTetrisMode(uint32_t nowMs) {
   game.reset();
   game.debugResyncTimers(nowMs);
   ai.reset();
-  aiMode = false;
+  aiMode = true;
   lastHumanMs = nowMs;
   lastAutoAiSkill = 255;
   lastAutoAiRampPct = 255;
@@ -240,8 +219,6 @@ static void startBreakoutMode(uint32_t nowMs) {
 }
 
 static void launchSelectedMode(uint32_t nowMs) {
-  saveBootModePref(g_menuSelection);
-
   if (g_menuSelection == 0) {
     Serial.println(">> Starting Tetris");
     startTetrisMode(nowMs);
@@ -305,12 +282,10 @@ void setup() {
   ai.reset();
   breakoutAi.reset();
   lastHumanMs = millis();
-  loadBootModePref();
 
   Serial.println("\nArcade ready.");
-  Serial.print("Boot mode: ");
-  Serial.println((g_persistedBootMode == 0) ? "Tetris" : "Breakout");
-  Serial.println("Hold SELECT/BACK/SHARE while paused to open the game menu.");
+  Serial.println("Boot mode: Tetris");
+  Serial.println("Hold SELECT/BACK/SHARE while paused to open the game menu (Tetris/Breakout).");
   Serial.println("Breakout controls:");
   Serial.println("  Left / Right = move paddle");
   Serial.println("  A / B / Down = launch ball");
@@ -330,11 +305,7 @@ void setup() {
   Serial.println("  g       = preview MAX chase progress (cycles fill/colors)");
   Serial.println();
 
-  if (g_persistedBootMode == 0) {
-    startTetrisMode(lastHumanMs);
-  } else {
-    startBreakoutMode(lastHumanMs);
-  }
+  startTetrisMode(lastHumanMs);
 }
 
 void loop() {
