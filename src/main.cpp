@@ -195,7 +195,7 @@ static void startTetrisMode(uint32_t nowMs) {
   game.reset();
   game.debugResyncTimers(nowMs);
   ai.reset();
-  aiMode = false;
+  aiMode = true;
   lastHumanMs = nowMs;
   lastAutoAiSkill = 255;
   lastAutoAiRampPct = 255;
