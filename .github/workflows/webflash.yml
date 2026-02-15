@@ -48,6 +48,10 @@ jobs:
       - name: Build firmware
         run: pio run -e esp32-s3-4mb
 
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+
       - name: Build web flash site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: python scripts/ci/build_webflash_site.py --env esp32-s3-4mb --out site --version "${{ github.sha }}"
