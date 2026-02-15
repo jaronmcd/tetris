@@ -5,3 +5,5 @@
 .vscode/ipch
 site/
 notes.ai
+__pycache__/
+.pytest_cache/

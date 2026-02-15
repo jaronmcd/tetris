@@ -18,6 +18,12 @@ pio run -e esp32-s3-4mb -t upload
 pio device monitor -b 115200
 ```
 
+4. Run host-side CI tests (webflash manifest logic):
+
+```bash
+python -m pytest -q tests/test_build_webflash_site.py
+```
+
 ## Pull Requests
 
 - Keep PRs focused on one change.
