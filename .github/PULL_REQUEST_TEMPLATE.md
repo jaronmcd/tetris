@@ -4,7 +4,7 @@ Describe the change and why it is needed.
 
 ## Testing
 
-- [ ] `pio run -e esp32-s3-4mb`
+- [ ] `pio run -e esp32dev-4mb`
 - [ ] Hardware test performed (if applicable)
 - [ ] README/docs updated (if applicable)
 

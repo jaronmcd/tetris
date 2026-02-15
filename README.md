@@ -1,6 +1,6 @@
 # ESP32 NeoPixel Tetris (16×16) 
 
-A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPixel/WS2812 matrix**.
+A tiny, self-contained **Tetris** for an **ESP32** driving a **16×16 NeoPixel/WS2812 matrix**.
 
 - **10×15** playfield centered on a 16×16 matrix (bottom row reserved as border)
 - **Bluetooth gamepad support** via **Bluepad32** (D‑pad + buttons)
@@ -13,21 +13,41 @@ A tiny, self-contained **Tetris** for an **ESP32‑S3** driving a **16×16 NeoPi
 
 ## Hardware
 
-- ESP32‑S3 DevKit (project defaults to `esp32-s3-devkitc-1`)
+- ESP32 DevKit V1 / ESP-WROOM-32 board (project default env: `esp32dev-4mb`)
+- ESP32-S3 DevKitC-1 (optional env: `esp32-s3-4mb`)
 - 16×16 NeoPixel / WS2812(B) matrix (256 LEDs)
 - 5V power supply sized for your matrix
   - Even with the default low brightness, *don’t* power the matrix from the dev board’s USB.
 - Common ground between ESP32 and LED matrix
 
-### Wiring (default)
+### Wiring
 
-| Signal | ESP32-S3 | Matrix |
+Default environment: `esp32dev-4mb`
+
+| Signal | ESP32 DevKit (ESP-WROOM-32) | Matrix |
 |---|---:|---|
-| Data | **GPIO 1** (`LED_PIN`) | DIN |
+| Data | **GPIO 23** (`LED_PIN` in `esp32dev-4mb`) | DIN |
 | Power | 5V supply | +5V |
 | Ground | GND | GND |
 
-If your board/matrix uses a different data pin, change it in `include/config.h`.
+Optional environment: `esp32-s3-4mb`
+
+| Signal | ESP32-S3 DevKitC-1 | Matrix |
+|---|---:|---|
+| Data | **GPIO 1** (`LED_PIN` in `esp32-s3-4mb`) | DIN |
+| Power | 5V supply | +5V |
+| Ground | GND | GND |
+
+If your board/matrix uses a different data pin, update `LED_PIN` in `platformio.ini` (`build_flags`) or `include/config.h`.
+
+### Microcontroller Environments (`platformio.ini`)
+
+| Environment | Board | Default LED data pin | USB/Serial behavior |
+|---|---|---:|---|
+| `esp32dev-4mb` | `esp32dev` (ESP-WROOM-32 DevKit) | GPIO 23 | External USB-UART bridge (CP2102/CH340). Repo currently pins `upload_port` + `monitor_port` to `/dev/ttyUSB0`. |
+| `esp32-s3-4mb` | `esp32-s3-devkitc-1` | GPIO 1 | Native USB CDC (`ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`). Usually appears as `/dev/ttyACM*` on Linux. |
+
+If you have multiple USB-UART adapters, prefer a stable path such as `/dev/serial/by-id/...` for `upload_port` and `monitor_port` in your selected environment.
 
 ---
 
@@ -36,28 +56,28 @@ If your board/matrix uses a different data pin, change it in `include/config.h`.
 If you want to make one from scratch, follow this path:
 
 1. Gather parts
-   - ESP32-S3 dev board (project default: `esp32-s3-devkitc-1`)
+   - ESP32 dev board (project default env: `esp32dev-4mb`)
    - 16x16 WS2812/NeoPixel matrix
    - 5V power supply (3A+ recommended)
    - Data-capable USB cable
    - Jumper wires
    - Optional but recommended: 330-470 ohm resistor on `DIN`, 1000uF capacitor across matrix `+5V/GND`
 2. Wire it
-   - Matrix `DIN` -> ESP32 `GPIO 1`
+   - Matrix `DIN` -> ESP32 `GPIO 23` (`esp32dev-4mb`) or `GPIO 1` (`esp32-s3-4mb`)
    - Matrix `+5V` -> 5V supply
    - Matrix `GND` -> 5V supply ground
    - ESP32 `GND` -> same ground as the matrix/power supply
 3. Flash firmware
    - From this repo root:
      ```bash
-     pio run -e esp32-s3-4mb
-     pio run -e esp32-s3-4mb -t upload
+     pio run -e esp32dev-4mb
+     pio run -e esp32dev-4mb -t upload
      pio device monitor -b 115200
      ```
 4. Pair a controller and play
    - Connect a Bluetooth gamepad (or use serial keyboard controls listed below).
 
-Tip: If nothing lights up, check power and shared ground first, then verify `LED_PIN` in `include/config.h`.
+Tip: If nothing lights up, check power and shared ground first, then verify the active environment’s `LED_PIN` in `platformio.ini`.
 
 ---
 
@@ -76,7 +96,17 @@ The build uses a Bluepad32-enabled Arduino core (see `platformio.ini`).
 
 ## Build, Upload, Monitor
 
-From the project root:
+From the project root.
+
+Default board (`esp32dev-4mb`):
+
+```bash
+pio run -e esp32dev-4mb
+pio run -e esp32dev-4mb -t upload
+pio device monitor -b 115200
+```
+
+ESP32-S3 board (`esp32-s3-4mb`):
 
 ```bash
 pio run -e esp32-s3-4mb
@@ -84,11 +114,13 @@ pio run -e esp32-s3-4mb -t upload
 pio device monitor -b 115200
 ```
 
-Or in one shot:
+Or in one shot for either environment:
 
 ```bash
-pio run -e esp32-s3-4mb -t upload -t monitor
+pio run -e esp32dev-4mb -t upload -t monitor
 ```
+
+If serial-port autodetection picks the wrong adapter, set `upload_port`/`monitor_port` in `platformio.ini` for that environment.
 
 ---
 
@@ -100,7 +132,8 @@ pio run -e esp32-s3-4mb -t upload -t monitor
 - **D‑pad Down (hold)**: soft drop
 - **A**: rotate
 - **B**: hard drop
-- **Y**: restart
+- **START**: pause/resume (screen dims while paused)
+- **SELECT/BACK/SHARE (while paused)**: hold for ~3 seconds (screen fades to black) to reset and return to intro screens
 
 ### Serial keyboard (via monitor)
 
@@ -140,9 +173,11 @@ All the project’s main tuning knobs live in:
 
 Useful settings:
 
-- `LED_PIN` – data pin for the matrix (default: **GPIO 1**)
+- `LED_PIN` – data pin for the matrix (default: **GPIO 23** in `esp32dev-4mb`; **GPIO 1** in `esp32-s3-4mb`)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
 - `BRIGHTNESS` – global brightness (default: **95**)
+- `PAUSE_DIM_ENABLED` – dim matrix while paused (default: **true**)
+- `PAUSE_BRIGHTNESS_WHEN_PAUSED` – brightness while paused (default: **22**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
 - `BOARD_OFFSET_X`, `BOARD_OFFSET_Y` – where the 10×16 Tetris board sits inside the matrix
 - `BOOT_STATS_ENABLED` – show the MAX-level "high screen" status during power-up (skippable)
@@ -160,6 +195,12 @@ AI smartness ladder (tied to MAX chase progress):
 - `AI_SMARTNESS_FROM_MAX_CHASE_ENABLED` – if true, every time the MAX chase progress hits a *full* background color, the AI increases its decision quality
 - `AI_SMARTNESS_BASE` – starting skill level (1 = current baseline; 0 is intentionally a little sloppy for testing)
 - `AI_SMARTNESS_MAX` – max skill level (keeps MCU CPU usage predictable)
+- `AI_ADAPTIVE_EVOLUTION_ENABLED` – adds a board-stress adaptive layer on top of the MAX-chase ladder
+- `AI_ADAPTIVE_PRESSURE_START_ROW` – top-stack row where adaptive pressure begins
+- `AI_ADAPTIVE_PRESSURE_FULL_ROW` – top-stack row where adaptive pressure is treated as maxed
+- `AI_ADAPTIVE_RAMP_BONUS_MAX_PCT` – max extra ramp added toward the next AI skill tier
+- `AI_ADAPTIVE_SKILL_BOOST_ON_PCT` – adaptive signal threshold to temporarily add `+1` skill
+- `AI_ADAPTIVE_SKILL_BOOST_OFF_PCT` – lower threshold to drop that temporary boost (hysteresis)
 
 Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
@@ -185,7 +226,7 @@ Records are stored using ESP32 **Preferences** under namespace `tetris`:
 
 - **Nothing lights up**
   - Confirm the matrix has **5V power** and **shared ground** with the ESP32.
-  - Verify `LED_PIN` in `include/config.h` matches your wiring.
+  - Verify the active environment’s `LED_PIN` in `platformio.ini` matches your wiring.
 
 - **Matrix looks mirrored / scrambled**
   - Toggle `SERPENTINE` or `MATRIX_BOTTOM_UP` in `include/config.h`.

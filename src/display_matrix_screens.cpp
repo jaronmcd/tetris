@@ -228,6 +228,49 @@ void MatrixDisplay::drawNumberCentered(uint8_t value, uint8_t scale, uint32_t co
 
 }
 
+void MatrixDisplay::showPauseResetHoldFade(uint32_t heldMs, uint32_t holdMsRequired) {
+  if (holdMsRequired == 0) return;
+  if (heldMs > holdMsRequired) heldMs = holdMsRequired;
+
+  // Strong fade-to-black curve:
+  // - Immediately drops to a visibly darker scene
+  // - Continues to crush toward black as hold nears completion.
+  const uint32_t invMs = holdMsRequired - heldMs;
+  const uint64_t inv2 = (uint64_t)invMs * (uint64_t)invMs;
+  const uint64_t hold2 = (uint64_t)holdMsRequired * (uint64_t)holdMsRequired;
+  uint8_t keep = (uint8_t)((inv2 * 110u) / hold2); // 110..0 (max ~43% of paused frame)
+
+  for (uint16_t i = 0; i < NUM_LEDS; i++) {
+    uint32_t old = strip_.getPixelColor(i);
+    uint8_t r = (uint8_t)((old >> 16) & 0xFF);
+    uint8_t g = (uint8_t)((old >> 8) & 0xFF);
+    uint8_t b = (uint8_t)(old & 0xFF);
+    r = (uint8_t)(((uint16_t)r * keep) / 255u);
+    g = (uint8_t)(((uint16_t)g * keep) / 255u);
+    b = (uint8_t)(((uint16_t)b * keep) / 255u);
+    strip_.setPixelColor(i, strip_.Color(r, g, b));
+  }
+
+  // Center blackout plate so the countdown is always readable on noisy frames.
+  for (int16_t y = 0; y < (int16_t)MATRIX_H; y++) {
+    for (int16_t x = 2; x <= 13; x++) {
+      setPixel(x, y, strip_.Color(0, 0, 0));
+    }
+  }
+
+  // Countdown number: 3, 2, 1.
+  uint32_t remainMs = holdMsRequired - heldMs;
+  uint8_t remainSec = (uint8_t)((remainMs + 999u) / 1000u);
+  if (remainSec < 1) remainSec = 1;
+  drawNumberCenteredHalo(remainSec,
+                         2,
+                         strip_.Color(255, 255, 255),
+                         220,
+                         true);
+
+  strip_.show();
+}
+
 void MatrixDisplay::drawNumberCenteredHalo(uint8_t value, uint8_t scale, uint32_t color, uint8_t haloAlpha, bool darken) {
   if (haloAlpha == 0) {
     drawNumberCentered(value, scale, color);

@@ -2,9 +2,13 @@
 #include <stdint.h>
 
 // ======================
-// NeoPixel (your known-good pin)
+// NeoPixel data pin
 // ======================
-#define LED_PIN 1
+// Default is for [env:esp32dev-4mb] (GPIO23 on common ESP32 DevKit boards).
+// Override per board via build_flags: -DLED_PIN=<gpio>
+#ifndef LED_PIN
+#define LED_PIN 23
+#endif
 
 #define MATRIX_W 16
 #define MATRIX_H 16
@@ -14,21 +18,18 @@
 #define BRIGHTNESS 95
 
 // ======================
-// USB power / dev safety
-// ======================
-// Goal: full brightness on a USB charger, reduced brightness when a PC/tool opens
-// the USB-CDC serial port (helps avoid USB port current limits / glare during development).
-// NOTE: intentionally not MCU-USB-stack-specific; it keys off Serial being opened.
-#define USB_BRIGHTNESS_AUTO_ENABLED true
-#define USB_BRIGHTNESS_WHEN_HOST 45
-#define USB_BRIGHTNESS_HOST_LATCH true
-
-// ======================
 // Brightness fade
 // ======================
 // Start at 0 on boot and fade to the selected target.
 #define BRIGHTNESS_FADE_UP_MS 900
 #define BRIGHTNESS_FADE_DOWN_MS 280
+
+// ======================
+// Pause dim
+// ======================
+// Dim the matrix while gameplay is paused.
+#define PAUSE_DIM_ENABLED true
+#define PAUSE_BRIGHTNESS_WHEN_PAUSED 22
 
 // ======================
 // Boot intro: drop-fill + speedup + bang
@@ -134,19 +135,6 @@
 #define MAX_LEVEL_CHASE_PROGRESS_ANIM_TAIL_ALPHA 20
 
 
-// ======================
-// USB power / dev safety
-// ======================
-// Goal: use full brightness on a USB charger, but reduce brightness when a PC/tool opens
-// the USB-CDC serial port (helps avoid USB port current limits / glare during development).
-// NOTE: This is intentionally not MCU-USB-stack-specific; it keys off Serial being opened.
-
-// ======================
-// Brightness fade
-// ======================
-// Start at 0 on boot and fade to the selected target.
-
-
 // Wiring layout
 #define SERPENTINE true
 #define MATRIX_BOTTOM_UP false
@@ -187,3 +175,19 @@
 // 3 = adds 1-ply next-piece lookahead (when next piece is known)
 // 4 = stronger weights + lookahead
 #define AI_SMARTNESS_MAX 4
+
+// Optional adaptive layer on top of the MAX-chase ladder.
+// This does not replace milestones; it nudges the AI based on current board stress.
+#define AI_ADAPTIVE_EVOLUTION_ENABLED true
+
+// Top-stack pressure mapping (0 = top row).
+// At/above START row the adaptive signal begins, and it reaches full by FULL row.
+#define AI_ADAPTIVE_PRESSURE_START_ROW 6
+#define AI_ADAPTIVE_PRESSURE_FULL_ROW 1
+
+// Maximum extra ramp percentage added to AI smartness blending (0..100).
+#define AI_ADAPTIVE_RAMP_BONUS_MAX_PCT 35
+
+// Temporary +1 skill boost hysteresis thresholds (0..100 adaptive signal).
+#define AI_ADAPTIVE_SKILL_BOOST_ON_PCT 80
+#define AI_ADAPTIVE_SKILL_BOOST_OFF_PCT 55
