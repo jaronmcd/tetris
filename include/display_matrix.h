@@ -28,6 +28,9 @@ public:
   // Boot intro title: scrolling big text (e.g., "TETRIS"). Skippable.
   void showIntroMarquee(const char* text, uint8_t scale, uint32_t maxDurationMs, AbortFn abortFn = nullptr);
 
+  // Boot intro hybrid: marquee titles + breakout-vs-tetris smash scene. Skippable.
+  void showIntroHybridArcade(uint32_t maxDurationMs, AbortFn abortFn = nullptr);
+
 
 
   // Debug: force the "high score" border style regardless of score.

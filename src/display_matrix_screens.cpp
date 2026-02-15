@@ -983,7 +983,12 @@ while (millis() < holdEnd) {
 static bool _glyph5x7(char c, uint8_t rows[7]) {
   for (int i = 0; i < 7; i++) rows[i] = 0;
   switch (c) {
+    case 'A': rows[0]=0b01110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b11111; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b10001; return true;
+    case 'B': rows[0]=0b11110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b11110; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b11110; return true;
+    case 'K': rows[0]=0b10001; rows[1]=0b10010; rows[2]=0b10100; rows[3]=0b11000; rows[4]=0b10100; rows[5]=0b10010; rows[6]=0b10001; return true;
+    case 'O': rows[0]=0b01110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b10001; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b01110; return true;
     case 'T': rows[0]=0b11111; rows[1]=0b00100; rows[2]=0b00100; rows[3]=0b00100; rows[4]=0b00100; rows[5]=0b00100; rows[6]=0b00100; return true;
+    case 'U': rows[0]=0b10001; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b10001; rows[4]=0b10001; rows[5]=0b10001; rows[6]=0b01110; return true;
     case 'E': rows[0]=0b11111; rows[1]=0b10000; rows[2]=0b10000; rows[3]=0b11110; rows[4]=0b10000; rows[5]=0b10000; rows[6]=0b11111; return true;
     case 'R': rows[0]=0b11110; rows[1]=0b10001; rows[2]=0b10001; rows[3]=0b11110; rows[4]=0b10100; rows[5]=0b10010; rows[6]=0b10001; return true;
     case 'I': rows[0]=0b11111; rows[1]=0b00100; rows[2]=0b00100; rows[3]=0b00100; rows[4]=0b00100; rows[5]=0b00100; rows[6]=0b11111; return true;
@@ -1096,6 +1101,312 @@ void MatrixDisplay::showIntroMarquee(const char* text, uint8_t scale, uint32_t m
     const uint8_t a = (uint8_t)(255 - (uint16_t)i * 255U / (uint16_t)denom);
     drawTextAt(lastX, scaleColor(white, a));
     delay((uint32_t)INTRO_MARQUEE_FADE_FRAME_MS);
+  }
+
+  tickPowerBrightness(millis());
+  strip_.clear();
+  strip_.show();
+#endif
+}
+
+void MatrixDisplay::showIntroHybridArcade(uint32_t maxDurationMs, AbortFn abortFn) {
+#if !INTRO_ENABLED
+  (void)maxDurationMs;
+  (void)abortFn;
+  return;
+#else
+  if (maxDurationMs == 0) return;
+
+  const uint32_t start = millis();
+  const uint32_t deadline = start + maxDurationMs;
+
+#if defined(ARDUINO_ARCH_ESP32)
+  randomSeed((uint32_t)(esp_random() ^ (uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+#else
+  randomSeed((uint32_t)((uint32_t)micros() ^ ((uint32_t)millis() << 16)));
+#endif
+
+  bool filled[MATRIX_H][MATRIX_W] = {};
+  uint32_t col[MATRIX_H][MATRIX_W] = {};
+  int filledCount = 0;
+
+  constexpr int16_t kPaddleW = 4;
+  const int16_t paddleY = (int16_t)MATRIX_H - 1;
+  int16_t paddleX = (int16_t)((MATRIX_W - kPaddleW) / 2);
+
+  int16_t ballXQ8 = (int16_t)((paddleX + 1) << 8);
+  int16_t ballYQ8 = (int16_t)((paddleY - 1) << 8);
+  int16_t velXQ8 = (int16_t)((random(0, 2) == 0) ? -28 : 28);
+  int16_t velYQ8 = (int16_t)-34;
+
+  constexpr int16_t kMinAbsVx = 10;
+  constexpr int16_t kMaxAbsVx = 52;
+  constexpr int16_t kMinAbsVy = 14;
+  constexpr int16_t kMaxAbsVy = 56;
+
+  auto clampI16 = [&](int16_t v, int16_t lo, int16_t hi) -> int16_t {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+  };
+
+  auto progress1024 = [&]() -> uint16_t {
+    const uint32_t now = (uint32_t)millis();
+    const uint32_t elapsed = (now - start);
+    const uint32_t total = (uint32_t)(MATRIX_W * MATRIX_H);
+    const uint32_t fillP = (total == 0U) ? 0U : (uint32_t)filledCount * 1024U / total;
+    const uint32_t timeP = (maxDurationMs == 0U) ? 1024U : (elapsed * 1024U / maxDurationMs);
+    uint32_t p = (fillP > timeP) ? fillP : timeP;
+    if (p > 1024U) p = 1024U;
+    return (uint16_t)p;
+  };
+
+  auto frameDelayMs = [&]() -> uint16_t {
+    const uint16_t p = progress1024();
+    uint16_t d = _rampU16((uint16_t)INTRO_FRAME_MS_START, (uint16_t)INTRO_FRAME_MS_END, p);
+    if (d < (uint16_t)INTRO_HYBRID_FRAME_MS) d = (uint16_t)INTRO_HYBRID_FRAME_MS;
+    return (d < 1U) ? 1U : d;
+  };
+
+  auto framesPerPiece = [&]() -> uint8_t {
+    const uint16_t p = progress1024();
+    const uint16_t f = _rampU16((uint16_t)INTRO_FRAMES_PER_PIECE_START, (uint16_t)INTRO_FRAMES_PER_PIECE_END, p);
+    return (f < 2U) ? 2U : (uint8_t)f;
+  };
+
+  auto collides = [&](int x, int y, const _IntroPt pts[4]) -> bool {
+    for (int i = 0; i < 4; i++) {
+      const int xx = x + pts[i].x;
+      const int yy = y + pts[i].y;
+      if (xx < 0 || xx >= MATRIX_W) return true;
+      if (yy >= MATRIX_H) return true;
+      if (yy >= 0 && filled[yy][xx]) return true;
+    }
+    return false;
+  };
+
+  auto pieceAliveCount = [&](const bool alive[4]) -> uint8_t {
+    uint8_t n = 0;
+    for (int i = 0; i < 4; i++) if (alive[i]) n++;
+    return n;
+  };
+
+  auto updateBall = [&](int pieceX, int pieceY, const _IntroPt pts[4], bool alivePiece[4], bool pieceActive) {
+    int16_t ballPx = (int16_t)((ballXQ8 + 128) >> 8);
+    int16_t targetX = (int16_t)(ballPx - (kPaddleW / 2));
+    targetX = clampI16(targetX, 0, (int16_t)MATRIX_W - kPaddleW);
+    if (paddleX < targetX) paddleX++;
+    else if (paddleX > targetX) paddleX--;
+
+    const int16_t oldXQ8 = ballXQ8;
+    const int16_t oldYQ8 = ballYQ8;
+
+    ballXQ8 = (int16_t)(ballXQ8 + velXQ8);
+    ballYQ8 = (int16_t)(ballYQ8 + velYQ8);
+
+    const int16_t minXQ8 = 0;
+    const int16_t maxXQ8 = (int16_t)(((int16_t)MATRIX_W - 1) << 8);
+    const int16_t minYQ8 = 0;
+
+    if (ballXQ8 < minXQ8) {
+      ballXQ8 = minXQ8;
+      velXQ8 = (int16_t)-velXQ8;
+    } else if (ballXQ8 > maxXQ8) {
+      ballXQ8 = maxXQ8;
+      velXQ8 = (int16_t)-velXQ8;
+    }
+
+    if (ballYQ8 < minYQ8) {
+      ballYQ8 = minYQ8;
+      velYQ8 = (int16_t)abs(velYQ8);
+    }
+
+    int16_t bx = clampI16((int16_t)((ballXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    int16_t by = clampI16((int16_t)((ballYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+    int16_t oldBx = clampI16((int16_t)((oldXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    int16_t oldBy = clampI16((int16_t)((oldYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+
+    bool broke = false;
+
+    if (pieceActive) {
+      for (int i = 0; i < 4; i++) {
+        if (!alivePiece[i]) continue;
+        const int16_t cx = (int16_t)(pieceX + pts[i].x);
+        const int16_t cy = (int16_t)(pieceY + pts[i].y);
+        if (cy < 0 || cy >= (int16_t)MATRIX_H || cx < 0 || cx >= (int16_t)MATRIX_W) continue;
+        if (cx == bx && cy == by) {
+          alivePiece[i] = false;
+          broke = true;
+          break;
+        }
+      }
+    }
+
+    if (!broke && by >= 0 && by < (int16_t)MATRIX_H && bx >= 0 && bx < (int16_t)MATRIX_W && filled[by][bx]) {
+      filled[by][bx] = false;
+      col[by][bx] = 0;
+      if (filledCount > 0) filledCount--;
+      broke = true;
+    }
+
+    if (broke) {
+      if (oldBy != by) velYQ8 = (int16_t)-velYQ8;
+      else if (oldBx != bx) velXQ8 = (int16_t)-velXQ8;
+      else velYQ8 = (int16_t)-velYQ8;
+    }
+
+    bx = clampI16((int16_t)((ballXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    by = clampI16((int16_t)((ballYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+
+    if (velYQ8 > 0 && by >= (paddleY - 1)) {
+      const int16_t paddleRight = (int16_t)(paddleX + kPaddleW - 1);
+      if (bx >= paddleX && bx <= paddleRight) {
+        ballYQ8 = (int16_t)((paddleY - 1) << 8);
+        velYQ8 = (int16_t)-abs(velYQ8);
+        const int16_t centerQ8 = (int16_t)((paddleX << 8) + ((kPaddleW - 1) << 7));
+        const int16_t offsetQ8 = (int16_t)(ballXQ8 - centerQ8);
+        velXQ8 = (int16_t)(velXQ8 + offsetQ8 / 10);
+      }
+    }
+
+    const int16_t loseY = (int16_t)(((int16_t)MATRIX_H - 1) << 8) + (2 << 8);
+    if (ballYQ8 > loseY) {
+      ballXQ8 = (int16_t)((paddleX + 1) << 8);
+      ballYQ8 = (int16_t)((paddleY - 1) << 8);
+      velXQ8 = (int16_t)((random(0, 2) == 0) ? -26 : 26);
+      velYQ8 = (int16_t)-32;
+    }
+
+    const int16_t avx = (int16_t)abs(velXQ8);
+    const int16_t avy = (int16_t)abs(velYQ8);
+    if (avx < kMinAbsVx) velXQ8 = (velXQ8 < 0) ? (int16_t)-kMinAbsVx : (int16_t)kMinAbsVx;
+    if (avx > kMaxAbsVx) velXQ8 = (velXQ8 < 0) ? (int16_t)-kMaxAbsVx : (int16_t)kMaxAbsVx;
+    if (avy < kMinAbsVy) velYQ8 = (velYQ8 < 0) ? (int16_t)-kMinAbsVy : (int16_t)kMinAbsVy;
+    if (avy > kMaxAbsVy) velYQ8 = (velYQ8 < 0) ? (int16_t)-kMaxAbsVy : (int16_t)kMaxAbsVy;
+  };
+
+  auto drawScene = [&](int px, int py, const _IntroPt pts[4], const bool alivePiece[4], uint32_t pc, bool drawPiece) {
+    strip_.clear();
+
+    for (int y = 0; y < MATRIX_H; y++) {
+      const uint8_t vv = (uint8_t)(2u + (y >> 2));
+      for (int x = 0; x < MATRIX_W; x++) {
+        setPixel(x, y, strip_.Color(0, 0, vv));
+      }
+    }
+
+    for (int y = 0; y < MATRIX_H; y++) {
+      for (int x = 0; x < MATRIX_W; x++) {
+        if (filled[y][x]) {
+          strip_.setPixelColor(XY((uint8_t)x, (uint8_t)y), col[y][x]);
+        }
+      }
+    }
+
+    if (drawPiece) {
+      for (int i = 0; i < 4; i++) {
+        if (!alivePiece[i]) continue;
+        const int xx = px + pts[i].x;
+        const int yy = py + pts[i].y;
+        if (xx < 0 || xx >= MATRIX_W || yy < 0 || yy >= MATRIX_H) continue;
+        strip_.setPixelColor(XY((uint8_t)xx, (uint8_t)yy), pc);
+      }
+    }
+
+    const uint32_t paddleC = strip_.Color(70, 210, 230);
+    for (int16_t dx = 0; dx < kPaddleW; dx++) {
+      setPixel((int16_t)(paddleX + dx), paddleY, paddleC);
+    }
+
+    const int16_t bx = clampI16((int16_t)((ballXQ8 + 128) >> 8), 0, (int16_t)MATRIX_W - 1);
+    const int16_t by = clampI16((int16_t)((ballYQ8 + 128) >> 8), 0, (int16_t)MATRIX_H - 1);
+
+    setPixel(bx, by, strip_.Color(255, 255, 255));
+
+    strip_.show();
+  };
+
+  while (millis() < deadline && filledCount < (MATRIX_W * MATRIX_H)) {
+    const uint8_t type = (uint8_t)random(0, 7);
+    const uint8_t rot = (uint8_t)random(0, 4);
+
+    _IntroPt pts[4];
+    for (int i = 0; i < 4; i++) pts[i] = _BASE[type][i];
+    for (int r = 0; r < rot; r++) {
+      for (int i = 0; i < 4; i++) _rotate4x4(pts[i]);
+    }
+
+    int8_t w = 0;
+    int8_t h = 0;
+    _normalizePts(pts, w, h);
+    if (w <= 0 || h <= 0) continue;
+
+    const int x = (int)random(0, MATRIX_W - w + 1);
+    int y = -h;
+    while (!collides(x, y + 1, pts)) y++;
+    if (collides(x, y, pts)) break;
+
+    bool alivePiece[4] = {true, true, true, true};
+    const uint32_t pc = _introColor(strip_, (uint8_t)(type + (uint8_t)random(0, 7)));
+
+    const int yStart = -h;
+    const int yEnd = y;
+    const int dy = yEnd - yStart;
+    const int frames = (int)framesPerPiece();
+    int step = 1;
+    if (dy > 0 && frames > 1) {
+      step = dy / (frames - 1);
+      if (step < 1) step = 1;
+    }
+
+    int yy = yStart;
+    while (yy < yEnd) {
+      tickPowerBrightness(millis());
+      updateBall(x, yy, pts, alivePiece, true);
+      drawScene(x, yy, pts, alivePiece, pc, true);
+      if (abortFn && abortFn()) return;
+      if (millis() >= deadline) break;
+      if (pieceAliveCount(alivePiece) == 0) break;
+      delay((uint32_t)frameDelayMs());
+      yy += step;
+    }
+
+    if (millis() >= deadline) break;
+
+    int settleY = yy;
+    if (settleY > yEnd) settleY = yEnd;
+
+    if (pieceAliveCount(alivePiece) > 0) {
+      tickPowerBrightness(millis());
+      updateBall(x, settleY, pts, alivePiece, true);
+      drawScene(x, settleY, pts, alivePiece, pc, true);
+      if (abortFn && abortFn()) return;
+      delay((uint32_t)frameDelayMs());
+    }
+
+    for (int i = 0; i < 4; i++) {
+      if (!alivePiece[i]) continue;
+      const int xx = x + pts[i].x;
+      const int yyf = settleY + pts[i].y;
+      if (xx < 0 || xx >= MATRIX_W || yyf < 0 || yyf >= MATRIX_H) continue;
+      if (!filled[yyf][xx]) {
+        filled[yyf][xx] = true;
+        col[yyf][xx] = pc;
+        filledCount++;
+      }
+    }
+  }
+
+  const uint32_t nowHold = (uint32_t)millis();
+  const uint32_t holdEnd = (deadline < (nowHold + 180U)) ? deadline : (nowHold + 180U);
+  bool noPiece[4] = {false, false, false, false};
+  _IntroPt dummy[4] = {{0,0},{0,0},{0,0},{0,0}};
+  while (millis() < holdEnd) {
+    tickPowerBrightness(millis());
+    updateBall(-32, -32, dummy, noPiece, false);
+    drawScene(-32, -32, dummy, noPiece, strip_.Color(0, 0, 0), false);
+    if (abortFn && abortFn()) return;
+    delay(12);
   }
 
   tickPowerBrightness(millis());

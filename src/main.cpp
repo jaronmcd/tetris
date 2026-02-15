@@ -261,14 +261,19 @@ void setup() {
 
   display.begin();
 
-  // Boot title: big scrolling text (skippable)
-  #if INTRO_ENABLED && INTRO_MARQUEE_ENABLED
-  display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
-  #endif
-
-  // Boot intro: rapid falling pieces that fill the matrix (skippable)
   #if INTRO_ENABLED
-  display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+    #if INTRO_HYBRID_ENABLED
+    // Hybrid boot sequence: TETRIS + BREAKOUT marquees, then smash scene.
+    display.showIntroHybridArcade((uint32_t)INTRO_HYBRID_MAX_MS, &bootAbort);
+    #else
+      // Boot title: big scrolling text (skippable)
+      #if INTRO_MARQUEE_ENABLED
+      display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
+      #endif
+
+      // Boot intro: rapid falling pieces that fill the matrix (skippable)
+      display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+    #endif
   #endif
 
   display.bootFlash(); // RGB Flash
