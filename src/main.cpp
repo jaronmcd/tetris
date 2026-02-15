@@ -5,11 +5,23 @@
 #include "input.h"
 #include "ai.h"
 #include "config.h"
+#include "breakout.h"
 
 static TetrisGame game;
 static MatrixDisplay display;
 static InputManager input;
 static TetrisAI ai;
+static BreakoutAI breakoutAi;
+static BreakoutGame breakout;
+
+enum class GameMode : uint8_t {
+  Menu = 0,
+  Tetris = 1,
+  Breakout = 2,
+};
+
+static GameMode g_mode = GameMode::Menu;
+static uint8_t g_menuSelection = 0;
 
 static uint32_t lastFrameMs = 0;
 
@@ -122,6 +134,12 @@ static bool paused = false;
 static uint32_t pauseRenderNowMs = 0;
 static uint32_t pauseResetHoldStartMs = 0;
 static bool pauseResetHoldActive = false;
+static bool breakoutPaused = false;
+static uint32_t breakoutPauseRenderNowMs = 0;
+static uint32_t breakoutPauseResetHoldStartMs = 0;
+static bool breakoutPauseResetHoldActive = false;
+static uint32_t breakoutLastHumanMs = 0;
+static bool breakoutAiMode = false;
 static constexpr uint32_t IDLE_TO_AI_MS = 8000;
 static constexpr uint32_t PAUSE_RESET_HOLD_MS = 3000;
 
@@ -143,6 +161,73 @@ static bool bootAbort() {
   return false;
 }
 
+static inline bool menuConfirmAction(const Actions& a) {
+  return a.rotate || a.drop || a.down || a.togglePause || a.restart;
+}
+
+static void enterMenu(uint32_t nowMs) {
+  g_mode = GameMode::Menu;
+  if (g_menuSelection > 1) g_menuSelection = 1;
+
+  paused = false;
+  pauseResetHoldStartMs = 0;
+  pauseResetHoldActive = false;
+
+  breakoutPaused = false;
+  breakoutPauseResetHoldStartMs = 0;
+  breakoutPauseResetHoldActive = false;
+  breakoutAiMode = false;
+
+  display.setPaused(false, nowMs);
+  game.debugResyncTimers(nowMs);
+  lastFrameMs = nowMs;
+}
+
+static void startTetrisMode(uint32_t nowMs) {
+  g_mode = GameMode::Tetris;
+  paused = false;
+  pauseResetHoldStartMs = 0;
+  pauseResetHoldActive = false;
+
+  display.setPaused(false, nowMs);
+
+  game.reset();
+  game.debugResyncTimers(nowMs);
+  ai.reset();
+  aiMode = false;
+  lastHumanMs = nowMs;
+  lastAutoAiSkill = 255;
+  lastAutoAiRampPct = 255;
+#if AI_ADAPTIVE_EVOLUTION_ENABLED
+  resetAdaptiveAiState();
+#endif
+  lastFrameMs = nowMs;
+}
+
+static void startBreakoutMode(uint32_t nowMs) {
+  g_mode = GameMode::Breakout;
+  breakout.reset(nowMs);
+  breakoutPaused = false;
+  breakoutPauseResetHoldStartMs = 0;
+  breakoutPauseResetHoldActive = false;
+  breakoutAiMode = false;
+  breakoutLastHumanMs = nowMs;
+  breakoutAi.reset();
+  display.setPaused(false, nowMs);
+  lastFrameMs = nowMs;
+}
+
+static void launchSelectedMode(uint32_t nowMs) {
+  if (g_menuSelection == 0) {
+    Serial.println(">> Starting Tetris");
+    startTetrisMode(nowMs);
+    return;
+  }
+
+  Serial.println(">> Starting Breakout");
+  startBreakoutMode(nowMs);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(30);
@@ -162,8 +247,9 @@ void setup() {
   display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
   #endif
 
-display.bootFlash(); // RGB Flash
+  display.bootFlash(); // RGB Flash
   game.begin(); // Loads HS from memory
+  breakout.begin(millis());
 
   // CONFIG TOGGLE TO WIPE DATA
   if (RESET_SCORES_ON_BOOT) {
@@ -187,12 +273,20 @@ display.bootFlash(); // RGB Flash
   }
 
   ai.reset();
-#if AI_ADAPTIVE_EVOLUTION_ENABLED
-  resetAdaptiveAiState();
-#endif
+  breakoutAi.reset();
   lastHumanMs = millis();
+  enterMenu(lastHumanMs);
 
-  Serial.println("\nTetris ready.");
+  Serial.println("\nArcade ready.");
+  Serial.println("Start menu:");
+  Serial.println("  Left / Right = pick game");
+  Serial.println("  A / B / START (or W / Space / R on serial) = launch game");
+  Serial.println("Breakout controls:");
+  Serial.println("  Left / Right = move paddle");
+  Serial.println("  A / B / Down = launch ball");
+  Serial.println("  START = pause/resume");
+  Serial.println("  Idle ~8s = Breakout AI demo mode");
+  Serial.println("  While paused: hold SELECT/BACK/SHARE ~3s to return to menu");
   Serial.println("Serial debug keys:");
   Serial.println("  z/x/c/v = force 1/2/3/4-line clear FX (test mode)");
   Serial.println("  [ / ]   = level -1 / +1 (animates transition, test mode)");
@@ -216,7 +310,135 @@ void loop() {
 
   if (human.aiProfileSet >= 0) {
     ai.setProfile((uint8_t)human.aiProfileSet);
+    breakoutAi.setProfile((uint8_t)human.aiProfileSet);
     human.aiProfileSet = -1;
+  }
+
+  if (g_mode == GameMode::Menu) {
+    if (human.left && g_menuSelection > 0) {
+      g_menuSelection--;
+    }
+    if (human.right && g_menuSelection < 1) {
+      g_menuSelection++;
+    }
+
+    if (menuConfirmAction(human)) {
+      launchSelectedMode(now);
+      return;
+    }
+
+    if ((now - lastFrameMs) >= 33) {
+      lastFrameMs = now;
+      display.renderGameSelectMenu(g_menuSelection, now);
+    }
+    return;
+  }
+
+  if (g_mode == GameMode::Breakout) {
+    if (anyHumanAction(human)) {
+      breakoutLastHumanMs = now;
+      if (breakoutAiMode) {
+        Serial.println(">> Breakout Human Control Active");
+        breakoutAiMode = false;
+        breakoutAi.reset();
+      }
+    }
+
+    if (human.togglePause && !breakout.isGameOver()) {
+      breakoutPaused = !breakoutPaused;
+      display.setPaused(breakoutPaused, now);
+      breakoutPauseResetHoldStartMs = 0;
+      if (breakoutPaused) {
+        breakoutPauseRenderNowMs = now;
+        Serial.println(">> Breakout paused");
+      } else {
+        Serial.println(">> Breakout resumed");
+      }
+    }
+
+    if (breakoutPaused) {
+      uint32_t heldMs = 0;
+      if (human.pauseResetHeld) {
+        if (breakoutPauseResetHoldStartMs == 0) breakoutPauseResetHoldStartMs = now;
+        if (!breakoutPauseResetHoldActive) {
+          breakoutPauseResetHoldActive = true;
+          Serial.println(">> Breakout hold reset started");
+        }
+        heldMs = now - breakoutPauseResetHoldStartMs;
+      } else {
+        if (breakoutPauseResetHoldActive) {
+          breakoutPauseResetHoldActive = false;
+          Serial.println(">> Breakout hold reset canceled");
+        }
+        breakoutPauseResetHoldStartMs = 0;
+      }
+
+      if (human.restart || heldMs >= PAUSE_RESET_HOLD_MS) {
+        Serial.println(">> Returning to game menu");
+        enterMenu(now);
+
+        for (int i = 0; i < 3; i++) {
+          input.update();
+          input.readActions();
+          delay(15);
+        }
+        return;
+      }
+
+      if (now - lastFrameMs >= 15) {
+        lastFrameMs = now;
+        display.renderBreakout(breakout, breakoutPauseRenderNowMs);
+        if (breakoutPauseResetHoldStartMs != 0) {
+          display.showPauseResetHoldFade(heldMs, PAUSE_RESET_HOLD_MS);
+        }
+      }
+      return;
+    }
+
+    if (human.restart) {
+      Serial.println(">> Breakout -> menu");
+      enterMenu(now);
+      return;
+    }
+
+    if (!breakoutAiMode && (now - breakoutLastHumanMs) > IDLE_TO_AI_MS) {
+      Serial.println(">> Breakout AI Demo Mode Active");
+      breakoutAiMode = true;
+      breakoutAi.reset();
+    }
+
+    Actions act = human;
+    if (breakoutAiMode) {
+      act = breakoutAi.think(breakout, now);
+    }
+
+    if (breakout.isGameOver()) {
+      if (act.rotate || act.drop || act.down) {
+        Serial.println(">> Breakout restart");
+        breakout.reset(now);
+      }
+    } else {
+      BreakoutGame::TickResult br = breakout.tick(now, act);
+      if (br.lostLife) {
+        Serial.print(">> Breakout life lost. Lives left: ");
+        Serial.println(breakout.lives());
+      }
+      if (br.gameOver) {
+        if (br.won) {
+          Serial.println(">> Breakout: you cleared every brick!");
+        } else {
+          Serial.println(">> Breakout: game over");
+        }
+        Serial.print(">> Breakout score: ");
+        Serial.println(breakout.score());
+      }
+    }
+
+    if (now - lastFrameMs >= 15) {
+      lastFrameMs = now;
+      display.renderBreakout(breakout, now);
+    }
+    return;
   }
 
   if (human.togglePause) {
@@ -254,39 +476,15 @@ void loop() {
       pauseResetHoldStartMs = 0;
     }
 
-    // Serial restart remains as a debug/development shortcut.
+    // Serial restart remains as a quick return-to-menu shortcut.
     if (human.restart || heldMs >= PAUSE_RESET_HOLD_MS) {
       if (human.restart) {
-        Serial.println(">> Restarting from pause (serial)...");
+        Serial.println(">> Returning to menu (serial)...");
       } else {
-        Serial.println(">> Pause reset hold complete. Returning to intro...");
+        Serial.println(">> Pause reset hold complete. Returning to menu...");
       }
 
-      paused = false;
-      pauseResetHoldStartMs = 0;
-      pauseResetHoldActive = false;
-      display.setPaused(false, now);
-
-      #if INTRO_ENABLED && INTRO_MARQUEE_ENABLED
-      display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
-      #endif
-      #if INTRO_ENABLED
-      display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
-      #endif
-      display.bootFlash();
-      #if BOOT_STATS_ENABLED
-      display.showBootStats(game.maxLevel(), game.maxLevelChaseAttempts(), &bootAbort);
-      #endif
-
-      game.reset();
-#if AI_ADAPTIVE_EVOLUTION_ENABLED
-      resetAdaptiveAiState();
-#endif
-      uint32_t afterMs = millis();
-      game.debugResyncTimers(afterMs);
-      display.tickPowerBrightness(afterMs);
-      lastHumanMs = afterMs;
-      lastFrameMs = afterMs;
+      enterMenu(now);
 
       for (int i = 0; i < 3; i++) {
         input.update();

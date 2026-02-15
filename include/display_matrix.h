@@ -6,6 +6,8 @@
 #include "config.h"
 #include "tetris.h"
 
+class BreakoutGame;
+
 class MatrixDisplay {
 public:
   using AbortFn = bool (*)();
@@ -48,6 +50,8 @@ public:
   void showBootStats(uint8_t maxLevel, uint16_t maxChaseAttempts, AbortFn abortFn = nullptr);
 
   void render(const TetrisGame& g, uint32_t nowMs);
+  void renderGameSelectMenu(uint8_t selectedGame, uint32_t nowMs);
+  void renderBreakout(const BreakoutGame& g, uint32_t nowMs);
 
 private:
   uint16_t XY(uint8_t x, uint8_t y) const;
