@@ -52,3 +52,30 @@ def test_infer_chip_family_prefers_defines_then_env_name():
     assert m._infer_chip_family("esp32-s3-4mb", {"defines": ["ARDUINO_ESP32S3_DEV"]}) == "ESP32-S3"
     assert m._infer_chip_family("my-c3-env", {"defines": []}) == "ESP32-C3"
     assert m._infer_chip_family("plain-esp32", {"defines": []}) == "ESP32"
+
+
+def test_collect_build_for_env_writes_env_scoped_manifest_paths(tmp_path):
+    m = _load_module()
+    repo_root = tmp_path / "repo"
+    build_dir = repo_root / ".pio" / "build" / "esp32dev-4mb"
+    out_dir = tmp_path / "site"
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+    (build_dir / "firmware.bin").write_bytes(b"app")
+    (build_dir / "bootloader.bin").write_bytes(b"boot")
+    (build_dir / "partitions.bin").write_bytes(b"part")
+    (build_dir / "idedata.json").write_text('{"defines":["ARDUINO_ESP32_DEV"]}', encoding="utf-8")
+
+    original_search_boot_app0 = m._search_boot_app0
+    m._search_boot_app0 = lambda _repo_root, _build_dir: None
+    try:
+        build = m._collect_build_for_env(repo_root, out_dir, "esp32dev-4mb", "auto")
+    finally:
+        m._search_boot_app0 = original_search_boot_app0
+
+    assert build["chipFamily"] == "ESP32"
+    assert build["parts"] == [
+        {"path": "firmware/esp32dev-4mb/bootloader.bin", "offset": 0x1000},
+        {"path": "firmware/esp32dev-4mb/partitions.bin", "offset": 0x8000},
+        {"path": "firmware/esp32dev-4mb/firmware.bin", "offset": 0x10000},
+    ]
