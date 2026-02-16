@@ -39,8 +39,14 @@ One-time branch protection setup:
 Optional arguments:
 
 ```bash
-./scripts/ci/protect_main_branch.sh owner/repo "Web Flasher (ESP32) / build"
+./scripts/ci/protect_main_branch.sh owner/repo build 0
 ```
+
+Argument order:
+
+- `owner/repo` (optional; defaults to current repo)
+- required check name (optional; default `build`)
+- required approvals (optional; default `0`, use `1+` for team review enforcement)
 
 ## Pull Requests
 

@@ -3,7 +3,8 @@ set -euo pipefail
 
 BRANCH="main"
 REPO="${1:-}"
-REQUIRED_CHECK_CONTEXT="${2:-Web Flasher (ESP32) / build}"
+REQUIRED_CHECK_CONTEXT="${2:-build}"
+REQUIRED_APPROVALS="${3:-0}"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: GitHub CLI (gh) is required." >&2
@@ -29,18 +30,25 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! [[ "${REQUIRED_APPROVALS}" =~ ^[0-9]+$ ]]; then
+  echo "Error: approvals must be a non-negative integer." >&2
+  exit 1
+fi
+
 payload="$(
-  jq -n --arg check "${REQUIRED_CHECK_CONTEXT}" '
+  jq -n --arg check "${REQUIRED_CHECK_CONTEXT}" --argjson approvals "${REQUIRED_APPROVALS}" '
   {
     required_status_checks: {
       strict: true,
-      contexts: [$check]
+      checks: [
+        { context: $check }
+      ]
     },
     enforce_admins: true,
     required_pull_request_reviews: {
       dismiss_stale_reviews: true,
       require_code_owner_reviews: false,
-      required_approving_review_count: 1
+      required_approving_review_count: $approvals
     },
     restrictions: null,
     required_linear_history: false,
@@ -63,3 +71,4 @@ echo "Branch protection configured:"
 echo "  repo: ${REPO}"
 echo "  branch: ${BRANCH}"
 echo "  required check: ${REQUIRED_CHECK_CONTEXT}"
+echo "  required approvals: ${REQUIRED_APPROVALS}"
