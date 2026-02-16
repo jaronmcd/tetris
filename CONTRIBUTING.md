@@ -5,6 +5,17 @@ Thanks for contributing to ESP32 NeoPixel Tetris.
 ## Development Setup
 
 1. Install PlatformIO (CLI or VS Code extension).
+
+If you use the VS Code PlatformIO extension, you can build/upload from the IDE even if `pio` is not available in your shell.
+
+Optional CLI setup (recommended for tests/automation):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip platformio pytest
+```
+
 2. Build the default target:
 
 ```bash

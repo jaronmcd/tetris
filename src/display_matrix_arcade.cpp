@@ -6,58 +6,68 @@ static inline uint8_t tri8u(uint8_t v) {
 }
 
 void MatrixDisplay::renderSettingsScreen(uint32_t nowMs) {
-  (void)nowMs;
   strip_.clear();
 
   const uint8_t brightnessPct = (uint8_t)(((uint16_t)userBrightness_ * 100u) / 255u);
-  drawTextCentered(String((int)brightnessPct), 2, strip_.Color(240, 240, 255));
+  const String pctText = String((int)brightnessPct);
 
-  // Brightness bar (14px wide) with a simple frame.
-  for (uint8_t x = 0; x < MATRIX_W; x++) {
-    setPixel(x, 8, strip_.Color(24, 24, 30));
-    setPixel(x, 11, strip_.Color(24, 24, 30));
+  // Numeric value on the left.
+  const int16_t valueY = 7;
+  const int16_t textWidth = (int16_t)pctText.length() * 4 - 1;
+  const int16_t valueAreaW = 11;  // x=0..10
+  int16_t valueX = (valueAreaW - textWidth) / 2;
+  if (valueX < 0) valueX = 0;
+  drawText(valueX, valueY, pctText, strip_.Color(240, 240, 255));
+
+  // Brightness bar on the right (side-by-side with the numeric value).
+  const uint8_t barX0 = 11;
+  const uint8_t barX1 = 15;
+  const uint8_t barY0 = 3;
+  const uint8_t barY1 = 14;
+  const uint32_t frameColor = strip_.Color(24, 24, 30);
+  const uint32_t fillOn = strip_.Color(85, 240, 180);
+  const uint32_t fillOff = strip_.Color(20, 20, 26);
+
+  for (uint8_t x = barX0; x <= barX1; x++) {
+    setPixel(x, barY0, frameColor);
+    setPixel(x, barY1, frameColor);
   }
-  for (uint8_t y = 8; y <= 11; y++) {
-    setPixel(0, y, strip_.Color(24, 24, 30));
-    setPixel(MATRIX_W - 1, y, strip_.Color(24, 24, 30));
+  for (uint8_t y = barY0; y <= barY1; y++) {
+    setPixel(barX0, y, frameColor);
+    setPixel(barX1, y, frameColor);
   }
 
-  const uint8_t barFill = (uint8_t)(((uint16_t)brightnessPct * 14u) / 100u);
-  for (uint8_t x = 1; x <= 14; x++) {
-    const uint32_t c = ((x - 1) < barFill) ? strip_.Color(85, 240, 180)
-                                           : strip_.Color(20, 20, 26);
-    setPixel(x, 9, c);
-    setPixel(x, 10, c);
+  const uint8_t meterRows = (uint8_t)(barY1 - barY0 - 1);  // 10 rows
+  const uint8_t filledRows = (uint8_t)(((uint16_t)brightnessPct * meterRows + 99u) / 100u);
+  for (uint8_t row = 0; row < meterRows; row++) {
+    const uint32_t c = (row < filledRows) ? fillOn : fillOff;
+    const uint8_t y = (uint8_t)((barY1 - 1) - row);
+    for (uint8_t x = (uint8_t)(barX0 + 1); x < barX1; x++) {
+      setPixel(x, y, c);
+    }
   }
 
-  // Tiny corner marker indicates current rotation quadrant.
+  // Tiny pulse under the bar as feedback while adjusting.
+  const uint32_t hint = (((nowMs / 220u) & 1u) != 0u)
+                      ? strip_.Color(220, 220, 220)
+                      : strip_.Color(45, 45, 55);
+  setPixel(13, 15, hint);
+
+  // Keep rotation visible, but minimal: tiny corner marker only.
   const uint32_t marker = strip_.Color(170, 190, 255);
   switch (rotationQuarterTurns_ & 0x03u) {
     case 1:
-      setPixel(14, 1, marker);
-      setPixel(14, 2, marker);
+      setPixel(7, 0, marker);
       break;
     case 2:
-      setPixel(14, 14, marker);
-      setPixel(13, 14, marker);
+      setPixel(7, 15, marker);
       break;
     case 3:
-      setPixel(1, 14, marker);
-      setPixel(1, 13, marker);
+      setPixel(0, 7, marker);
       break;
     default:
-      setPixel(1, 1, marker);
-      setPixel(2, 1, marker);
+      setPixel(0, 0, marker);
       break;
-  }
-
-  // A little feedback sparkle so D-pad changes are obvious without labels.
-  if ((millis() / 220u) & 1u) {
-    setPixel(7, 14, strip_.Color(255, 255, 255));
-    setPixel(8, 14, strip_.Color(255, 255, 255));
-  } else {
-    setPixel(7, 14, strip_.Color(45, 45, 55));
-    setPixel(8, 14, strip_.Color(45, 45, 55));
   }
 
   strip_.show();

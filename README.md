@@ -113,6 +113,12 @@ The build uses a Bluepad32-enabled Arduino core (see `platformio.ini`).
 
 From the project root.
 
+If `pio` is not found in your terminal, either use the VS Code PlatformIO UI or run via Python:
+
+```bash
+python -m platformio run -e esp32dev-4mb
+```
+
 Default board (`esp32dev-4mb`):
 
 ```bash
