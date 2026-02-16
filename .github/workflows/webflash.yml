@@ -1,4 +1,4 @@
-name: Web Flasher (ESP32 + ESP32-S3)
+name: Web Flasher (ESP32)
 
 on:
   push:
@@ -46,9 +46,7 @@ jobs:
         run: python -m pytest -q tests/test_build_webflash_site.py
 
       - name: Build firmware
-        run: |
-          pio run -e esp32dev-4mb
-          pio run -e esp32-s3-4mb
+        run: pio run -e esp32dev-4mb
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -56,12 +54,7 @@ jobs:
 
       - name: Build web flash site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: |
-          python scripts/ci/build_webflash_site.py \
-            --env esp32dev-4mb \
-            --env esp32-s3-4mb \
-            --out site \
-            --version "${{ github.sha }}"
+        run: python scripts/ci/build_webflash_site.py --env esp32dev-4mb --out site --version "${{ github.sha }}"
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
