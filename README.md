@@ -14,6 +14,21 @@ A tiny, self-contained **arcade bundle** for an **ESP32** driving a **16×16 Neo
 
 ---
 
+## Web Flash (GitHub Pages)
+
+You can flash firmware directly from your browser at:
+
+- <https://jaronmcd.github.io/tetris/>
+
+Notes:
+
+- Current web installer target is **ESP32 Dev Module** (`esp32dev-4mb`) only.
+- Browser support: Chrome/Edge with Web Serial.
+- If you fork this repo, your Pages URL will be:
+  - `https://<your-github-username>.github.io/tetris/`
+
+---
+
 ## Hardware
 
 - ESP32 DevKit V1 / ESP-WROOM-32 board (project default env: `esp32dev-4mb`)
