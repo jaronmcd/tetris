@@ -75,7 +75,14 @@ If you want to make one from scratch, follow this path:
 
 1. Gather parts
    - ESP32 dev board (project default env: `esp32dev-4mb`)
-   - 16x16 WS2812/NeoPixel matrix
+   - 16x16 WS2812(B)/NeoPixel **5V** matrix panel (256 addressable RGB LEDs)
+   - For compatible alternatives, match these display specs:
+     - 16x16 layout (256 pixels total)
+     - WS2812(B)/NeoPixel protocol over a single data line (`DIN`)
+     - 3-wire power/data interface (`5V`, `GND`, `DIN`) with shared ground
+     - Marked `DIN` / `DOUT` pads (or connector) for orientation/chaining
+   - Pixel pitch and panel size can vary; firmware only requires a logical 16x16 matrix
+   - Example listing used in this build (may change): <https://a.co/d/01Z0GEtj>
    - 5V power supply (3A+ recommended)
    - Data-capable USB cable
    - Jumper wires
