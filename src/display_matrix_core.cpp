@@ -1,31 +1,71 @@
 #include "display_matrix.h"
 #include <Arduino.h>
+#include <Preferences.h>
 
 
 MatrixDisplay::MatrixDisplay() : strip_(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800) {}
 
-
-static inline uint8_t chooseBrightnessTarget(bool paused) {
-  uint8_t target = (uint8_t)BRIGHTNESS;
-#if PAUSE_DIM_ENABLED
-  if (paused && target > (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED) {
-    target = (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED;
-  }
-#endif
-  return target;
+static inline uint8_t clampBrightnessSetting(uint32_t b) {
+  if (b < 8u) b = 8u;
+  if (b > 255u) b = 255u;
+  return (uint8_t)b;
 }
 
-static inline uint8_t lerpU8(uint8_t a, uint8_t b, uint32_t num, uint32_t den) {
-  if (den == 0) return b;
-  const int32_t delta = (int32_t)b - (int32_t)a;
-  const int32_t v = (int32_t)a + (delta * (int32_t)num) / (int32_t)den;
-  if (v < 0) return 0;
-  if (v > 255) return 255;
-  return (uint8_t)v;
+void MatrixDisplay::loadDisplaySettings() {
+  Preferences prefs;
+  prefs.begin("display", true);
+  const uint32_t savedBrightness = prefs.getUInt("br", (uint32_t)BRIGHTNESS);
+  const uint32_t savedRotation = prefs.getUInt("rot", 0u);
+  prefs.end();
+
+  userBrightness_ = clampBrightnessSetting(savedBrightness);
+  rotationQuarterTurns_ = (uint8_t)(savedRotation & 0x03u);
+}
+
+void MatrixDisplay::saveDisplaySettings() const {
+  Preferences prefs;
+  prefs.begin("display", false);
+  prefs.putUInt("br", (uint32_t)userBrightness_);
+  prefs.putUInt("rot", (uint32_t)rotationQuarterTurns_);
+  prefs.end();
+}
+
+void MatrixDisplay::adjustUserBrightness(int8_t delta) {
+  int16_t next = (int16_t)userBrightness_ + (int16_t)delta;
+  if (next < 8) next = 8;
+  if (next > 255) next = 255;
+  const uint8_t nv = (uint8_t)next;
+  if (nv == userBrightness_) return;
+  userBrightness_ = nv;
+  saveDisplaySettings();
+}
+
+void MatrixDisplay::rotateDisplay(int8_t quarterTurnsDelta) {
+  int8_t next = (int8_t)rotationQuarterTurns_ + quarterTurnsDelta;
+  next %= 4;
+  if (next < 0) next += 4;
+  const uint8_t nv = (uint8_t)next;
+  if (nv == rotationQuarterTurns_) return;
+  rotationQuarterTurns_ = nv;
+  saveDisplaySettings();
 }
 
 void MatrixDisplay::tickPowerBrightness(uint32_t nowMs) {
-  const uint8_t target = chooseBrightnessTarget(paused_);
+  uint8_t target = userBrightness_;
+#if PAUSE_DIM_ENABLED
+  if (paused_ && target > (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED) {
+    target = (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED;
+  }
+#endif
+
+  auto lerpU8 = [](uint8_t a, uint8_t b, uint32_t num, uint32_t den) -> uint8_t {
+    if (den == 0) return b;
+    const int32_t delta = (int32_t)b - (int32_t)a;
+    const int32_t v = (int32_t)a + (delta * (int32_t)num) / (int32_t)den;
+    if (v < 0) return 0;
+    if (v > 255) return 255;
+    return (uint8_t)v;
+  };
 
   // Start a new fade if target changes.
   if (target != brightnessTarget_) {
@@ -67,6 +107,8 @@ void MatrixDisplay::tickPowerBrightness(uint32_t nowMs) {
 }
 
 void MatrixDisplay::begin() {
+  loadDisplaySettings();
+
   // Start dark to avoid a bright flash, then fade up to the selected target.
   strip_.begin();
   strip_.setBrightness(0);
@@ -91,8 +133,27 @@ void MatrixDisplay::bootFlash() {
 
 uint16_t MatrixDisplay::XY(uint8_t x, uint8_t y) const {
   if (x >= MATRIX_W || y >= MATRIX_H) return 0;
-  uint8_t xx = (uint8_t)(MATRIX_W - 1 - x);
-  uint8_t yy = MATRIX_BOTTOM_UP ? (MATRIX_H - 1 - y) : y;
+  uint8_t rx = x;
+  uint8_t ry = y;
+  switch (rotationQuarterTurns_ & 0x03u) {
+    case 1: // 90 CW
+      rx = (uint8_t)(MATRIX_W - 1 - y);
+      ry = x;
+      break;
+    case 2: // 180
+      rx = (uint8_t)(MATRIX_W - 1 - x);
+      ry = (uint8_t)(MATRIX_H - 1 - y);
+      break;
+    case 3: // 270 CW
+      rx = y;
+      ry = (uint8_t)(MATRIX_H - 1 - x);
+      break;
+    default:
+      break;
+  }
+
+  uint8_t xx = (uint8_t)(MATRIX_W - 1 - rx);
+  uint8_t yy = MATRIX_BOTTOM_UP ? (MATRIX_H - 1 - ry) : ry;
   if (!SERPENTINE) return (uint16_t)yy * MATRIX_W + xx;
   if ((yy & 1) == 0) return (uint16_t)yy * MATRIX_W + xx;
   return (uint16_t)yy * MATRIX_W + (MATRIX_W - 1 - xx);

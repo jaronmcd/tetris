@@ -18,6 +18,7 @@ enum class GameMode : uint8_t {
   Menu = 0,
   Tetris = 1,
   Breakout = 2,
+  Settings = 3,
 };
 
 static GameMode g_mode = GameMode::Menu;
@@ -132,37 +133,149 @@ static uint32_t lastHumanMs = 0;
 static bool aiMode = true;
 static bool paused = false;
 static uint32_t pauseRenderNowMs = 0;
-static uint32_t pauseResetHoldStartMs = 0;
-static bool pauseResetHoldActive = false;
+static uint32_t pauseMenuCountdownStartMs = 0;
+static bool pauseMenuCountdownActive = false;
 static bool breakoutPaused = false;
 static uint32_t breakoutPauseRenderNowMs = 0;
-static uint32_t breakoutPauseResetHoldStartMs = 0;
-static bool breakoutPauseResetHoldActive = false;
+static uint32_t breakoutPauseMenuCountdownStartMs = 0;
+static bool breakoutPauseMenuCountdownActive = false;
 static uint32_t breakoutLastHumanMs = 0;
 static bool breakoutAiMode = false;
 static constexpr uint32_t IDLE_TO_AI_MS = 8000;
-static constexpr uint32_t PAUSE_RESET_HOLD_MS = 3000;
+static constexpr uint32_t MENU_SWITCH_COUNTDOWN_MS = 3000;
+static constexpr uint32_t SETTINGS_OPEN_HOLD_MS = 3000;
+static constexpr uint32_t SETTINGS_REBOOT_HOLD_MS = 2500;
+static constexpr uint32_t SETTINGS_BRIGHTNESS_REPEAT_MS = 130;
+static constexpr uint32_t SETTINGS_ROTATE_REPEAT_MS = 170;
+
+static uint32_t menuSettingsHoldStartMs = 0;
+static uint32_t settingsRebootHoldStartMs = 0;
+static bool settingsRequireSelectRelease = false;
+static uint32_t settingsNextBrightnessStepMs = 0;
+static uint32_t settingsNextRotateStepMs = 0;
 
 static inline bool anyHumanAction(const Actions& a) {
-  return a.left || a.right || a.rotate || a.down || a.drop || a.togglePause || a.restart;
+  return a.left || a.right || a.up || a.rotate || a.down || a.drop || a.togglePause || a.restart;
 }
 
 // Boot skip state
 static bool g_bootSkipped = false;
+static bool g_bootSkipStartLatch = false;
 
 // Called frequently during boot screens. Returns true to abort/skip.
 static bool bootAbort() {
   input.update();
   Actions a = input.readActions();
-  if (anyHumanAction(a)) {
+
+  // Prefer START edge: catches quick taps the same way gameplay pause does.
+  if (a.togglePause) {
     g_bootSkipped = true;
     return true;
   }
+
+  // One START press skips one intro segment. Holding START won't chain-skip
+  // the following segment until START is released and pressed again.
+  if (a.startHeld && !g_bootSkipStartLatch) {
+    g_bootSkipStartLatch = true;
+    g_bootSkipped = true;
+    return true;
+  }
+
+  if (!a.startHeld) g_bootSkipStartLatch = false;
   return false;
 }
 
 static inline bool menuConfirmAction(const Actions& a) {
   return a.rotate || a.drop || a.down || a.togglePause || a.restart;
+}
+
+static inline bool menuSwitchComboHeld(const Actions& a) {
+  return a.pauseResetHeld;
+}
+
+static void startTetrisMode(uint32_t nowMs);
+
+static void softRestartToIntro() {
+  uint32_t nowMs = millis();
+
+  paused = false;
+  pauseRenderNowMs = 0;
+  pauseMenuCountdownStartMs = 0;
+  pauseMenuCountdownActive = false;
+
+  breakoutPaused = false;
+  breakoutPauseRenderNowMs = 0;
+  breakoutPauseMenuCountdownStartMs = 0;
+  breakoutPauseMenuCountdownActive = false;
+
+  menuSettingsHoldStartMs = 0;
+  settingsRebootHoldStartMs = 0;
+  settingsRequireSelectRelease = false;
+  settingsNextBrightnessStepMs = 0;
+  settingsNextRotateStepMs = 0;
+
+  display.setPaused(false, nowMs);
+
+  // Re-run boot visuals without resetting the MCU/Bluetooth stack.
+  g_bootSkipped = false;
+  g_bootSkipStartLatch = false;
+
+  #if INTRO_ENABLED
+    #if INTRO_HYBRID_ENABLED
+    if (!g_bootSkipped) {
+      display.showIntroHybridArcade((uint32_t)INTRO_HYBRID_MAX_MS, &bootAbort);
+    }
+    #else
+      #if INTRO_MARQUEE_ENABLED
+      if (!g_bootSkipped) {
+        display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
+      }
+      #endif
+
+      if (!g_bootSkipped) {
+        display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+      }
+    #endif
+  #endif
+
+  display.bootFlash();
+
+  #if BOOT_STATS_ENABLED
+  if (!g_bootSkipped) {
+    display.showBootStats(game.maxLevel(), game.maxLevelChaseAttempts(), &bootAbort);
+  }
+  game.debugResyncTimers(millis());
+  #endif
+
+  // Flush buffered edge events from the boot-skip/start logic.
+  for (int i = 0; i < 4; i++) {
+    input.update();
+    input.readActions();
+    delay(20);
+  }
+
+  startTetrisMode(millis());
+}
+
+static void enterSettings(uint32_t nowMs) {
+  g_mode = GameMode::Settings;
+
+  paused = false;
+  pauseMenuCountdownStartMs = 0;
+  pauseMenuCountdownActive = false;
+
+  breakoutPaused = false;
+  breakoutPauseMenuCountdownStartMs = 0;
+  breakoutPauseMenuCountdownActive = false;
+
+  menuSettingsHoldStartMs = 0;
+  settingsRebootHoldStartMs = 0;
+  settingsRequireSelectRelease = true;
+  settingsNextBrightnessStepMs = 0;
+  settingsNextRotateStepMs = 0;
+
+  display.setPaused(false, nowMs);
+  lastFrameMs = nowMs;
 }
 
 static void enterMenu(uint32_t nowMs) {
@@ -171,13 +284,19 @@ static void enterMenu(uint32_t nowMs) {
   g_menuSelection = 0;
 
   paused = false;
-  pauseResetHoldStartMs = 0;
-  pauseResetHoldActive = false;
+  pauseMenuCountdownStartMs = 0;
+  pauseMenuCountdownActive = false;
 
   breakoutPaused = false;
-  breakoutPauseResetHoldStartMs = 0;
-  breakoutPauseResetHoldActive = false;
+  breakoutPauseMenuCountdownStartMs = 0;
+  breakoutPauseMenuCountdownActive = false;
   breakoutAiMode = false;
+
+  menuSettingsHoldStartMs = 0;
+  settingsRebootHoldStartMs = 0;
+  settingsRequireSelectRelease = false;
+  settingsNextBrightnessStepMs = 0;
+  settingsNextRotateStepMs = 0;
 
   display.setPaused(false, nowMs);
   game.debugResyncTimers(nowMs);
@@ -187,8 +306,13 @@ static void enterMenu(uint32_t nowMs) {
 static void startTetrisMode(uint32_t nowMs) {
   g_mode = GameMode::Tetris;
   paused = false;
-  pauseResetHoldStartMs = 0;
-  pauseResetHoldActive = false;
+  pauseMenuCountdownStartMs = 0;
+  pauseMenuCountdownActive = false;
+  menuSettingsHoldStartMs = 0;
+  settingsRebootHoldStartMs = 0;
+  settingsRequireSelectRelease = false;
+  settingsNextBrightnessStepMs = 0;
+  settingsNextRotateStepMs = 0;
 
   display.setPaused(false, nowMs);
 
@@ -209,9 +333,14 @@ static void startBreakoutMode(uint32_t nowMs) {
   g_mode = GameMode::Breakout;
   breakout.reset(nowMs);
   breakoutPaused = false;
-  breakoutPauseResetHoldStartMs = 0;
-  breakoutPauseResetHoldActive = false;
+  breakoutPauseMenuCountdownStartMs = 0;
+  breakoutPauseMenuCountdownActive = false;
   breakoutAiMode = false;
+  menuSettingsHoldStartMs = 0;
+  settingsRebootHoldStartMs = 0;
+  settingsRequireSelectRelease = false;
+  settingsNextBrightnessStepMs = 0;
+  settingsNextRotateStepMs = 0;
   breakoutLastHumanMs = nowMs;
   breakoutAi.reset();
   display.setPaused(false, nowMs);
@@ -241,15 +370,21 @@ void setup() {
   #if INTRO_ENABLED
     #if INTRO_HYBRID_ENABLED
     // Hybrid boot sequence: TETRIS + BREAKOUT marquees, then smash scene.
-    display.showIntroHybridArcade((uint32_t)INTRO_HYBRID_MAX_MS, &bootAbort);
+    if (!g_bootSkipped) {
+      display.showIntroHybridArcade((uint32_t)INTRO_HYBRID_MAX_MS, &bootAbort);
+    }
     #else
       // Boot title: big scrolling text (skippable)
       #if INTRO_MARQUEE_ENABLED
-      display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
+      if (!g_bootSkipped) {
+        display.showIntroMarquee(INTRO_MARQUEE_TEXT, (uint8_t)INTRO_MARQUEE_SCALE, (uint32_t)INTRO_MARQUEE_MAX_MS, &bootAbort);
+      }
       #endif
 
       // Boot intro: rapid falling pieces that fill the matrix (skippable)
-      display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+      if (!g_bootSkipped) {
+        display.showIntroDropFill((uint32_t)INTRO_MAX_MS, &bootAbort);
+      }
     #endif
   #endif
 
@@ -265,7 +400,9 @@ void setup() {
 
   #if BOOT_STATS_ENABLED
   // Power-up: show the MAX-level "high screen" status (skippable).
-  display.showBootStats(game.maxLevel(), game.maxLevelChaseAttempts(), &bootAbort);
+  if (!g_bootSkipped) {
+    display.showBootStats(game.maxLevel(), game.maxLevelChaseAttempts(), &bootAbort);
+  }
 
   // Re-sync timers after the blocking boot screen so the first tick doesn't "fast-forward".
   game.debugResyncTimers(millis());
@@ -285,13 +422,15 @@ void setup() {
 
   Serial.println("\nArcade ready.");
   Serial.println("Boot mode: Tetris");
-  Serial.println("Hold SELECT/BACK/SHARE while paused to open the game menu (Tetris/Breakout).");
+  Serial.println("While paused, hold SELECT/BACK/SHARE for a 3..2..1 switch-to-menu countdown (release cancels).");
+  Serial.println("In game menu: hold SELECT/BACK/SHARE ~3s for display settings.");
+  Serial.println("Settings: Up/Down brightness, Left/Right rotate, hold SELECT ~2.5s to restart to intro.");
   Serial.println("Breakout controls:");
   Serial.println("  Left / Right = move paddle");
   Serial.println("  A / B / Down = launch ball");
   Serial.println("  START = pause/resume");
   Serial.println("  Idle ~8s = Breakout AI demo mode");
-  Serial.println("  While paused: hold SELECT/BACK/SHARE ~3s to return to menu");
+  Serial.println("  While paused, hold SELECT/BACK/SHARE = switch-to-menu countdown (release cancels)");
   Serial.println("Serial debug keys:");
   Serial.println("  z/x/c/v = force 1/2/3/4-line clear FX (test mode)");
   Serial.println("  [ / ]   = level -1 / +1 (animates transition, test mode)");
@@ -322,21 +461,111 @@ void loop() {
   }
 
   if (g_mode == GameMode::Menu) {
-    if (human.left && g_menuSelection > 0) {
-      g_menuSelection--;
-    }
-    if (human.right && g_menuSelection < 1) {
-      g_menuSelection++;
+    uint32_t heldMs = 0;
+    const bool comboHeld = menuSwitchComboHeld(human);
+    if (comboHeld) {
+      if (menuSettingsHoldStartMs == 0) {
+        menuSettingsHoldStartMs = now;
+        Serial.println(">> Menu settings hold started");
+      }
+      heldMs = now - menuSettingsHoldStartMs;
+      if (heldMs >= SETTINGS_OPEN_HOLD_MS) {
+        Serial.println(">> Opening display settings");
+        enterSettings(now);
+        return;
+      }
+    } else {
+      if (menuSettingsHoldStartMs != 0) {
+        Serial.println(">> Menu settings hold canceled");
+      }
+      menuSettingsHoldStartMs = 0;
     }
 
-    if (menuConfirmAction(human)) {
-      launchSelectedMode(now);
-      return;
+    if (!comboHeld) {
+      if (human.left && g_menuSelection > 0) {
+        g_menuSelection--;
+      }
+      if (human.right && g_menuSelection < 1) {
+        g_menuSelection++;
+      }
+
+      if (menuConfirmAction(human)) {
+        launchSelectedMode(now);
+        return;
+      }
     }
 
     if ((now - lastFrameMs) >= 33) {
       lastFrameMs = now;
       display.renderGameSelectMenu(g_menuSelection, now);
+    }
+    return;
+  }
+
+  if (g_mode == GameMode::Settings) {
+    const bool rebootHeld = human.pauseResetHeld;
+    uint32_t rebootHeldMs = 0;
+
+    if (settingsRequireSelectRelease) {
+      if (!rebootHeld) {
+        settingsRequireSelectRelease = false;
+      }
+    } else if (rebootHeld) {
+      if (settingsRebootHoldStartMs == 0) {
+        settingsRebootHoldStartMs = now;
+        Serial.println(">> Settings restart hold started");
+      }
+      rebootHeldMs = now - settingsRebootHoldStartMs;
+      if (rebootHeldMs >= SETTINGS_REBOOT_HOLD_MS) {
+        Serial.println(">> Restarting to intro with TV power-off (no CPU reboot)...");
+        display.showTvPowerOff();
+        delay(50);
+        softRestartToIntro();
+        return;
+      }
+    } else {
+      if (settingsRebootHoldStartMs != 0) {
+        Serial.println(">> Settings restart hold canceled");
+      }
+      settingsRebootHoldStartMs = 0;
+    }
+
+    if (!rebootHeld && (human.up || human.down) &&
+        (settingsNextBrightnessStepMs == 0 || now >= settingsNextBrightnessStepMs)) {
+      if (human.up && !human.down) {
+        display.adjustUserBrightness(+5);
+      } else if (human.down && !human.up) {
+        display.adjustUserBrightness(-5);
+      }
+      settingsNextBrightnessStepMs = now + SETTINGS_BRIGHTNESS_REPEAT_MS;
+    }
+    if (!human.up && !human.down) {
+      settingsNextBrightnessStepMs = 0;
+    }
+
+    if (!rebootHeld && (human.left || human.right) &&
+        (settingsNextRotateStepMs == 0 || now >= settingsNextRotateStepMs)) {
+      if (human.left && !human.right) {
+        display.rotateDisplay(-1);
+      } else if (human.right && !human.left) {
+        display.rotateDisplay(+1);
+      }
+      settingsNextRotateStepMs = now + SETTINGS_ROTATE_REPEAT_MS;
+    }
+    if (!human.left && !human.right) {
+      settingsNextRotateStepMs = 0;
+    }
+
+    // Quick exit back to game select.
+    if (!rebootHeld && (human.rotate || human.drop || human.togglePause || human.restart)) {
+      Serial.println(">> Leaving display settings");
+      enterMenu(now);
+      return;
+    }
+
+    if ((now - lastFrameMs) >= 33) {
+      lastFrameMs = now;
+      display.renderSettingsScreen(now);
     }
     return;
   }
@@ -351,37 +580,45 @@ void loop() {
       }
     }
 
-    if (human.togglePause && !breakout.isGameOver()) {
-      breakoutPaused = !breakoutPaused;
-      display.setPaused(breakoutPaused, now);
-      breakoutPauseResetHoldStartMs = 0;
-      if (breakoutPaused) {
-        breakoutPauseRenderNowMs = now;
-        Serial.println(">> Breakout paused");
-      } else {
-        Serial.println(">> Breakout resumed");
+    const bool breakoutMenuSwitchComboHeld = menuSwitchComboHeld(human);
+    const bool breakoutCountdownHeld = breakoutPaused && breakoutMenuSwitchComboHeld && !breakout.isGameOver();
+    if (breakoutCountdownHeld) {
+      if (!breakoutPauseMenuCountdownActive) {
+        breakoutPauseMenuCountdownStartMs = now;
+        breakoutPauseMenuCountdownActive = true;
+        Serial.println(">> Breakout menu switch countdown started");
+      }
+    } else {
+      if (breakoutPauseMenuCountdownActive) {
+        breakoutPauseMenuCountdownActive = false;
+        breakoutPauseMenuCountdownStartMs = 0;
+        Serial.println(">> Breakout menu switch countdown canceled");
+      }
+
+      if (human.togglePause && !breakout.isGameOver()) {
+        breakoutPaused = !breakoutPaused;
+        display.setPaused(breakoutPaused, now);
+        if (breakoutPaused) {
+          breakoutPauseRenderNowMs = now;
+          Serial.println(">> Breakout paused");
+        } else {
+          Serial.println(">> Breakout resumed");
+        }
       }
     }
 
     if (breakoutPaused) {
       uint32_t heldMs = 0;
-      if (human.pauseResetHeld) {
-        if (breakoutPauseResetHoldStartMs == 0) breakoutPauseResetHoldStartMs = now;
-        if (!breakoutPauseResetHoldActive) {
-          breakoutPauseResetHoldActive = true;
-          Serial.println(">> Breakout hold reset started");
-        }
-        heldMs = now - breakoutPauseResetHoldStartMs;
-      } else {
-        if (breakoutPauseResetHoldActive) {
-          breakoutPauseResetHoldActive = false;
-          Serial.println(">> Breakout hold reset canceled");
-        }
-        breakoutPauseResetHoldStartMs = 0;
+      if (breakoutPauseMenuCountdownActive && breakoutPauseMenuCountdownStartMs != 0) {
+        heldMs = now - breakoutPauseMenuCountdownStartMs;
       }
 
-      if (human.restart || heldMs >= PAUSE_RESET_HOLD_MS) {
-        Serial.println(">> Returning to game menu");
+      if (human.restart || heldMs >= MENU_SWITCH_COUNTDOWN_MS) {
+        if (human.restart) {
+          Serial.println(">> Breakout -> menu (serial)");
+        } else {
+          Serial.println(">> Breakout countdown complete -> menu");
+        }
         enterMenu(now);
 
         for (int i = 0; i < 3; i++) {
@@ -395,8 +632,8 @@ void loop() {
       if (now - lastFrameMs >= 15) {
         lastFrameMs = now;
         display.renderBreakout(breakout, breakoutPauseRenderNowMs);
-        if (breakoutPauseResetHoldStartMs != 0) {
-          display.showPauseResetHoldFade(heldMs, PAUSE_RESET_HOLD_MS);
+        if (breakoutPauseMenuCountdownActive && breakoutPauseMenuCountdownStartMs != 0) {
+          display.showPauseResetHoldFade(heldMs, MENU_SWITCH_COUNTDOWN_MS);
         }
       }
       return;
@@ -454,47 +691,51 @@ void loop() {
     return;
   }
 
-  if (human.togglePause) {
-    paused = !paused;
-    display.setPaused(paused, now);
-    pauseResetHoldStartMs = 0;
-    if (paused) {
-      pauseRenderNowMs = now; // freeze render-time animations while paused
-      Serial.println(">> Paused");
-      if (aiMode) {
-        aiMode = false;
-        ai.reset();
+  const bool menuSwitchComboIsHeld = menuSwitchComboHeld(human);
+  const bool menuSwitchCountdownHeld = paused && menuSwitchComboIsHeld;
+  if (menuSwitchCountdownHeld) {
+    if (!pauseMenuCountdownActive) {
+      pauseMenuCountdownStartMs = now;
+      pauseMenuCountdownActive = true;
+      Serial.println(">> Menu switch countdown started");
+    }
+  } else {
+    if (pauseMenuCountdownActive) {
+      pauseMenuCountdownActive = false;
+      pauseMenuCountdownStartMs = 0;
+      Serial.println(">> Menu switch countdown canceled");
+    }
+
+    if (human.togglePause) {
+      paused = !paused;
+      display.setPaused(paused, now);
+      if (paused) {
+        pauseRenderNowMs = now; // freeze render-time animations while paused
+        Serial.println(">> Paused");
+        if (aiMode) {
+          aiMode = false;
+          ai.reset();
+        }
+      } else {
+        Serial.println(">> Resumed");
+        game.debugResyncTimers(now);
+        lastHumanMs = now;
       }
-    } else {
-      Serial.println(">> Resumed");
-      game.debugResyncTimers(now);
-      lastHumanMs = now;
     }
   }
 
   if (paused) {
     uint32_t heldMs = 0;
-    if (human.pauseResetHeld) {
-      if (pauseResetHoldStartMs == 0) pauseResetHoldStartMs = now;
-      if (!pauseResetHoldActive) {
-        pauseResetHoldActive = true;
-        Serial.println(">> Hold reset started");
-      }
-      heldMs = now - pauseResetHoldStartMs;
-    } else {
-      if (pauseResetHoldActive) {
-        pauseResetHoldActive = false;
-        Serial.println(">> Hold reset canceled");
-      }
-      pauseResetHoldStartMs = 0;
+    if (pauseMenuCountdownActive && pauseMenuCountdownStartMs != 0) {
+      heldMs = now - pauseMenuCountdownStartMs;
     }
 
     // Serial restart remains as a quick return-to-menu shortcut.
-    if (human.restart || heldMs >= PAUSE_RESET_HOLD_MS) {
+    if (human.restart || heldMs >= MENU_SWITCH_COUNTDOWN_MS) {
       if (human.restart) {
         Serial.println(">> Returning to menu (serial)...");
       } else {
-        Serial.println(">> Pause reset hold complete. Returning to menu...");
+        Serial.println(">> Menu switch countdown complete. Returning to menu...");
       }
 
       enterMenu(now);
@@ -510,8 +751,8 @@ void loop() {
     if (now - lastFrameMs >= 15) {
       lastFrameMs = now;
       display.render(game, pauseRenderNowMs);
-      if (pauseResetHoldStartMs != 0) {
-        display.showPauseResetHoldFade(heldMs, PAUSE_RESET_HOLD_MS);
+      if (pauseMenuCountdownActive && pauseMenuCountdownStartMs != 0) {
+        display.showPauseResetHoldFade(heldMs, MENU_SWITCH_COUNTDOWN_MS);
       }
     }
     return;

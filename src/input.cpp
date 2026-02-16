@@ -25,7 +25,7 @@ void InputManager::begin() {
 
   // Uncomment once if you want to force re-pairing during testing.
   // Do not keep this enabled in normal use, or controllers won't auto-reconnect.
-  BP32.forgetBluetoothKeys();
+  // BP32.forgetBluetoothKeys();
 }
 
 void InputManager::update() {
@@ -110,6 +110,7 @@ Actions InputManager::readGamepad() {
   // (or users preferring the stick) still control movement.
   bool leftHeld  = (d & DPAD_LEFT)  || (ax < -STICK_DEADZONE);
   bool rightHeld = (d & DPAD_RIGHT) || (ax > STICK_DEADZONE);
+  bool upHeld    = (d & DPAD_UP)    || (ay < -STICK_DEADZONE);
   bool downHeld  = (d & DPAD_DOWN)  || (ay > STICK_DEADZONE);
 
   uint32_t now = millis();
@@ -129,7 +130,9 @@ Actions InputManager::readGamepad() {
 
   if ((A || X) && !lastA_) a.rotate = true;
   if (B && !lastB_) a.drop = true;
-  if (START && !lastStart_) a.togglePause = true;
+  if (START && !lastStart_ && !RESET_HOLD) a.togglePause = true;
+  a.up = upHeld;
+  a.startHeld = START;
   a.pauseResetHeld = RESET_HOLD;
 
   lastA_ = (A || X);
@@ -146,10 +149,12 @@ Actions InputManager::readActions() {
   Actions out;
   out.left = s.left || g.left;
   out.right = s.right || g.right;
+  out.up = s.up || g.up;
   out.rotate = s.rotate || g.rotate;
   out.down = s.down || g.down;
   out.drop = s.drop || g.drop;
   out.togglePause = s.togglePause || g.togglePause;
+  out.startHeld = s.startHeld || g.startHeld;
   out.pauseResetHeld = s.pauseResetHeld || g.pauseResetHeld;
   out.restart = s.restart || g.restart;
 
