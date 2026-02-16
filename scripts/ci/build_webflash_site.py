@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -113,36 +114,59 @@ def _resolve_offsets(idedata: dict[str, Any]) -> dict[str, int]:
     return offsets
 
 
+_VARIANT_TOKEN_RE = re.compile(r"^[A-Z]\d$")
+
+
+def _variant_from_token(token: str) -> Optional[str]:
+    token = token.upper()
+    if _VARIANT_TOKEN_RE.fullmatch(token):
+        return f"ESP32-{token}"
+    return None
+
+
+def _chip_family_from_define(define: str) -> Optional[str]:
+    parts = re.split(r"[^A-Z0-9]+", define.upper())
+    for part in parts:
+        if not part.startswith("ESP32"):
+            continue
+        suffix = part[len("ESP32"):]
+        if not suffix:
+            return "ESP32"
+        family = _variant_from_token(suffix)
+        if family:
+            return family
+        return "ESP32"
+    return None
+
+
 def _infer_chip_family(env_name: str, idedata: dict[str, Any]) -> str:
     # Prefer explicit compile defines from idedata when available.
     defines = idedata.get("defines", [])
     if isinstance(defines, list):
-        joined = " ".join(str(d).upper() for d in defines)
-        if "ESP32S3" in joined:
-            return "ESP32-S3"
-        if "ESP32S2" in joined:
-            return "ESP32-S2"
-        if "ESP32C3" in joined:
-            return "ESP32-C3"
-        if "ESP32C6" in joined:
-            return "ESP32-C6"
-        if "ESP32H2" in joined:
-            return "ESP32-H2"
-        if "ESP32" in joined:
-            return "ESP32"
+        for define in defines:
+            family = _chip_family_from_define(str(define))
+            if family:
+                return family
 
     # Fallback to env name conventions.
-    env = env_name.lower()
-    if "s3" in env:
-        return "ESP32-S3"
-    if "s2" in env:
-        return "ESP32-S2"
-    if "c3" in env:
-        return "ESP32-C3"
-    if "c6" in env:
-        return "ESP32-C6"
-    if "h2" in env:
-        return "ESP32-H2"
+    tokens = [token for token in re.split(r"[^a-z0-9]+", env_name.lower()) if token]
+    for idx, token in enumerate(tokens):
+        if not token.startswith("esp32"):
+            continue
+        suffix_family = _variant_from_token(token[len("esp32"):])
+        if suffix_family:
+            return suffix_family
+        if idx + 1 < len(tokens):
+            next_family = _variant_from_token(tokens[idx + 1])
+            if next_family:
+                return next_family
+        return "ESP32"
+
+    for token in tokens:
+        family = _variant_from_token(token)
+        if family:
+            return family
+
     return "ESP32"
 
 
@@ -253,7 +277,7 @@ def main() -> int:
     parser.add_argument(
         "--chip-family",
         default="auto",
-        help='ESP Web Tools chip family (e.g. "ESP32-S3"). Default: auto-detect',
+        help='ESP Web Tools chip family (e.g. "ESP32"). Default: auto-detect',
     )
     parser.add_argument(
         "--version",

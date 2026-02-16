@@ -32,7 +32,6 @@ Notes:
 ## Hardware
 
 - ESP32 DevKit V1 / ESP-WROOM-32 board (project default env: `esp32dev-4mb`)
-- ESP32-S3 DevKitC-1 (optional env: `esp32-s3-4mb`)
 - 16×16 NeoPixel / WS2812(B) matrix (256 LEDs)
 - 5V power supply sized for your matrix
   - Even with the default low brightness, *don’t* power the matrix from the dev board’s USB.
@@ -48,14 +47,6 @@ Default environment: `esp32dev-4mb`
 | Power | 5V supply | +5V |
 | Ground | GND | GND |
 
-Optional environment: `esp32-s3-4mb`
-
-| Signal | ESP32-S3 DevKitC-1 | Matrix |
-|---|---:|---|
-| Data | **GPIO 1** (`LED_PIN` in `esp32-s3-4mb`) | DIN |
-| Power | 5V supply | +5V |
-| Ground | GND | GND |
-
 If your board/matrix uses a different data pin, update `LED_PIN` in `platformio.ini` (`build_flags`) or `include/config.h`.
 
 ### Microcontroller Environments (`platformio.ini`)
@@ -63,7 +54,6 @@ If your board/matrix uses a different data pin, update `LED_PIN` in `platformio.
 | Environment | Board | Default LED data pin | USB/Serial behavior |
 |---|---|---:|---|
 | `esp32dev-4mb` | `esp32dev` (ESP-WROOM-32 DevKit) | GPIO 23 | External USB-UART bridge (CP2102/CH340). Repo currently pins `upload_port` + `monitor_port` to `/dev/ttyUSB0`. |
-| `esp32-s3-4mb` | `esp32-s3-devkitc-1` | GPIO 1 | Native USB CDC (`ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`). Usually appears as `/dev/ttyACM*` on Linux. |
 
 If you have multiple USB-UART adapters, prefer a stable path such as `/dev/serial/by-id/...` for `upload_port` and `monitor_port` in your selected environment.
 
@@ -88,7 +78,7 @@ If you want to make one from scratch, follow this path:
    - Jumper wires
    - Optional but recommended: 330-470 ohm resistor on `DIN`, 1000uF capacitor across matrix `+5V/GND`
 2. Wire it
-   - Matrix `DIN` -> ESP32 `GPIO 23` (`esp32dev-4mb`) or `GPIO 1` (`esp32-s3-4mb`)
+   - Matrix `DIN` -> ESP32 `GPIO 23` (`esp32dev-4mb`)
    - Matrix `+5V` -> 5V supply
    - Matrix `GND` -> 5V supply ground
    - ESP32 `GND` -> same ground as the matrix/power supply
@@ -131,15 +121,7 @@ pio run -e esp32dev-4mb -t upload
 pio device monitor -b 115200
 ```
 
-ESP32-S3 board (`esp32-s3-4mb`):
-
-```bash
-pio run -e esp32-s3-4mb
-pio run -e esp32-s3-4mb -t upload
-pio device monitor -b 115200
-```
-
-Or in one shot for either environment:
+In one shot (build + upload + monitor):
 
 ```bash
 pio run -e esp32dev-4mb -t upload -t monitor
@@ -232,7 +214,7 @@ All the project’s main tuning knobs live in:
 
 Useful settings:
 
-- `LED_PIN` – data pin for the matrix (default: **GPIO 23** in `esp32dev-4mb`; **GPIO 1** in `esp32-s3-4mb`)
+- `LED_PIN` – data pin for the matrix (default: **GPIO 23** in `esp32dev-4mb`)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
 - `BRIGHTNESS` – global brightness (default: **95**)
 - `PAUSE_DIM_ENABLED` – dim matrix while paused (default: **true**)

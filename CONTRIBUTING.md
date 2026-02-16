@@ -8,13 +8,13 @@ Thanks for contributing to ESP32 NeoPixel Tetris.
 2. Build the default target:
 
 ```bash
-pio run -e esp32-s3-4mb
+pio run -e esp32dev-4mb
 ```
 
 3. If testing on hardware, upload and monitor:
 
 ```bash
-pio run -e esp32-s3-4mb -t upload
+pio run -e esp32dev-4mb -t upload
 pio device monitor -b 115200
 ```
 
@@ -22,6 +22,24 @@ pio device monitor -b 115200
 
 ```bash
 python -m pytest -q tests/test_build_webflash_site.py
+```
+
+## Branch Strategy
+
+- Day-to-day work: create feature branches from `dev`, then open PRs back into `dev`.
+- Promotion: merge `dev` into `main` using a PR.
+- `main` should stay PR-only (no direct pushes).
+
+One-time branch protection setup:
+
+```bash
+./scripts/ci/protect_main_branch.sh
+```
+
+Optional arguments:
+
+```bash
+./scripts/ci/protect_main_branch.sh owner/repo "Web Flasher (ESP32) / build"
 ```
 
 ## Pull Requests

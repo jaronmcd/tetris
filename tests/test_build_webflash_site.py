@@ -49,8 +49,9 @@ def test_resolve_offsets_falls_back_to_defaults():
 
 def test_infer_chip_family_prefers_defines_then_env_name():
     m = _load_module()
-    assert m._infer_chip_family("esp32-s3-4mb", {"defines": ["ARDUINO_ESP32S3_DEV"]}) == "ESP32-S3"
+    assert m._infer_chip_family("esp32-c3-4mb", {"defines": ["ARDUINO_ESP32C3_DEV"]}) == "ESP32-C3"
     assert m._infer_chip_family("my-c3-env", {"defines": []}) == "ESP32-C3"
+    assert m._infer_chip_family("esp32dev-4mb", {"defines": []}) == "ESP32"
     assert m._infer_chip_family("plain-esp32", {"defines": []}) == "ESP32"
 
 

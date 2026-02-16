@@ -20,7 +20,7 @@ Describe the issue in one or two sentences.
 ## Firmware / Build
 
 - Commit or release:
-- Build environment: `esp32dev-4mb` (or `esp32-s3-4mb`)
+- Build environment: `esp32dev-4mb`
 - Flash method: PlatformIO / Web Flasher
 
 ## Steps to Reproduce
