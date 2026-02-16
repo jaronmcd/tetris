@@ -8,13 +8,13 @@ Thanks for contributing to ESP32 NeoPixel Tetris.
 2. Build the default target:
 
 ```bash
-pio run -e esp32-s3-4mb
+pio run -e esp32dev-4mb
 ```
 
 3. If testing on hardware, upload and monitor:
 
 ```bash
-pio run -e esp32-s3-4mb -t upload
+pio run -e esp32dev-4mb -t upload
 pio device monitor -b 115200
 ```
 
