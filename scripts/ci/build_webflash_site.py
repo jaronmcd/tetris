@@ -176,27 +176,11 @@ def _search_boot_app0(repo_root: Path, build_dir: Path) -> Optional[Path]:
     return None
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env", default="esp32-s3-4mb", help="PlatformIO environment name")
-    parser.add_argument("--out", default="site", help="Output directory for the static site")
-    parser.add_argument(
-        "--chip-family",
-        default="auto",
-        help='ESP Web Tools chip family (e.g. "ESP32-S3"). Default: auto-detect',
-    )
-    parser.add_argument(
-        "--version",
-        default=None,
-        help="Version string to embed in manifest (defaults to git describe)",
-    )
-    args = parser.parse_args()
-
-    repo_root = Path(__file__).resolve().parents[2]
-    build_dir = repo_root / ".pio" / "build" / args.env
+def _collect_build_for_env(repo_root: Path, out_dir: Path, env_name: str, chip_family_arg: str) -> dict[str, Any]:
+    build_dir = repo_root / ".pio" / "build" / env_name
 
     if not build_dir.exists():
-        raise SystemExit(f"Build directory not found: {build_dir} (did you run: pio run -e {args.env}?)")
+        raise SystemExit(f"Build directory not found: {build_dir} (did you run: pio run -e {env_name}?)")
 
     idedata = _load_idedata(build_dir)
     offsets = _resolve_offsets(idedata)
@@ -212,7 +196,7 @@ def main() -> int:
         firmware_bin = _glob_first(build_dir, ["**/firmware.bin", "**/program.bin"])
 
     if not firmware_bin:
-        raise SystemExit("Could not find application binary (expected firmware.bin)")
+        raise SystemExit(f"Could not find application binary for env '{env_name}' (expected firmware.bin)")
 
     bootloader_bin = _glob_first(build_dir, ["bootloader*.bin", "**/bootloader*.bin"])
     partitions_bin = _find_first([
@@ -222,6 +206,64 @@ def main() -> int:
     ]) or _glob_first(build_dir, ["**/partitions.bin", "**/partition-table.bin"])
 
     boot_app0_bin = _search_boot_app0(repo_root, build_dir)
+
+    # Keep each environment's files in its own folder to avoid collisions.
+    fw_env_dir = out_dir / "firmware" / env_name
+    fw_env_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_parts = []
+
+    def copy_part(src: Optional[Path], dest_name: str, offset: int) -> None:
+        if not src:
+            return
+        dest = fw_env_dir / dest_name
+        shutil.copy2(src, dest)
+        copied_parts.append({"path": f"firmware/{env_name}/{dest_name}", "offset": offset})
+
+    copy_part(bootloader_bin, "bootloader.bin", offsets["bootloader"])
+    copy_part(partitions_bin, "partitions.bin", offsets["partitions"])
+    copy_part(boot_app0_bin, "boot_app0.bin", offsets["boot_app0"])
+    copy_part(firmware_bin, "firmware.bin", offsets["app"])
+
+    if not copied_parts:
+        raise SystemExit(f"No firmware parts were copied for env '{env_name}'")
+
+    chip_family = _infer_chip_family(env_name, idedata) if chip_family_arg.lower() == "auto" else chip_family_arg
+    print(f"env: {env_name}")
+    print(f"  parts: {[p['path'] for p in copied_parts]}")
+    print(f"  offsets: {offsets}")
+    print(f"  chipFamily: {chip_family}")
+
+    return {
+        "chipFamily": chip_family,
+        "parts": copied_parts,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--env",
+        action="append",
+        dest="envs",
+        default=None,
+        help="PlatformIO environment name. Repeat to include multiple builds.",
+    )
+    parser.add_argument("--out", default="site", help="Output directory for the static site")
+    parser.add_argument(
+        "--chip-family",
+        default="auto",
+        help='ESP Web Tools chip family (e.g. "ESP32-S3"). Default: auto-detect',
+    )
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="Version string to embed in manifest (defaults to git describe)",
+    )
+    args = parser.parse_args()
+
+    repo_root = Path(__file__).resolve().parents[2]
+    envs = args.envs or ["esp32-s3-4mb"]
 
     # Prepare site output.
     out_dir = Path(args.out).resolve()
@@ -235,39 +277,14 @@ def main() -> int:
         raise SystemExit("Missing webflash/ directory")
     shutil.copytree(web_src, out_dir, dirs_exist_ok=True)
 
-    # Firmware files
-    fw_dir = out_dir / "firmware"
-    fw_dir.mkdir(parents=True, exist_ok=True)
-
-    copied_parts = []
-
-    def copy_part(src: Optional[Path], dest_name: str, offset: int) -> None:
-        if not src:
-            return
-        dest = fw_dir / dest_name
-        shutil.copy2(src, dest)
-        copied_parts.append({"path": f"firmware/{dest_name}", "offset": offset})
-
-    copy_part(bootloader_bin, "bootloader.bin", offsets["bootloader"])
-    copy_part(partitions_bin, "partitions.bin", offsets["partitions"])
-    copy_part(boot_app0_bin, "boot_app0.bin", offsets["boot_app0"])
-    copy_part(firmware_bin, "firmware.bin", offsets["app"])
-
-    if not copied_parts:
-        raise SystemExit("No firmware parts were copied; refusing to generate an empty manifest")
+    builds = [_collect_build_for_env(repo_root, out_dir, env_name, args.chip_family) for env_name in envs]
 
     version = args.version or _git_describe() or "dev"
-    chip_family = _infer_chip_family(args.env, idedata) if args.chip_family.lower() == "auto" else args.chip_family
 
     manifest = {
         "name": "ESP32 NeoPixel Tetris",
         "version": version,
-        "builds": [
-            {
-                "chipFamily": chip_family,
-                "parts": copied_parts,
-            }
-        ],
+        "builds": builds,
     }
 
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -276,9 +293,7 @@ def main() -> int:
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
 
     print(f"Built webflash site: {out_dir}")
-    print(f"  parts: {[p['path'] for p in copied_parts]}")
-    print(f"  offsets: {offsets}")
-    print(f"  chipFamily: {chip_family}")
+    print(f"  envs: {envs}")
     print(f"  version: {version}")
     return 0
 
