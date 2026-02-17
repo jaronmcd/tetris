@@ -111,6 +111,7 @@ bool showMaxLevelNumberScreen(uint8_t value,
   uint32_t solidLevelBorderColor(const TetrisGame& g, uint8_t x, uint8_t y, uint32_t nowMs) const;
   void loadDisplaySettings();
   void saveDisplaySettings() const;
+  void disarmRebootBrightnessGuard();
 
 private:
   // Brightness / fade state
@@ -124,6 +125,9 @@ private:
   bool paused_ = false;
   uint8_t userBrightness_ = (uint8_t)BRIGHTNESS;
   uint8_t rotationQuarterTurns_ = 0; // 0=0, 1=90 CW, 2=180, 3=270 CW
+  bool rebootGuardArmed_ = false;
+  uint32_t rebootGuardArmMs_ = 0;
+  bool rebootBrightnessWasClamped_ = false;
 
   Adafruit_NeoPixel strip_;
 };

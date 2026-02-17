@@ -223,6 +223,9 @@ Useful settings:
 - `LED_PIN` – data pin for the matrix (default: **GPIO 23** in `esp32dev-4mb`)
 - `MATRIX_W`, `MATRIX_H` – matrix dimensions (default: **16×16**)
 - `BRIGHTNESS` – global brightness (default: **95**)
+- `SAFE_REBOOT_BRIGHTNESS_GUARD_ENABLED` – on unclean reboot, clamp saved brightness to a safer value
+- `SAFE_REBOOT_STABLE_UPTIME_MS` – uptime threshold to mark a boot as stable (prevents false reboot-loop triggers)
+- `SAFE_REBOOT_BRIGHTNESS` – brightness used when reboot guard detects an unintentional restart
 - `PAUSE_DIM_ENABLED` – dim matrix while paused (default: **true**)
 - `PAUSE_BRIGHTNESS_WHEN_PAUSED` – brightness while paused (default: **22**)
 - `SERPENTINE`, `MATRIX_BOTTOM_UP` – adjust if your matrix is wired/oriented differently
@@ -264,6 +267,12 @@ Breakout records are stored independently in namespace `breakout`:
 Boot mode preference is stored in namespace `arcade`:
 
 - `bootm` = selected boot mode (`0`=Tetris, `1`=Breakout)
+
+Display preferences are stored in namespace `display`:
+
+- `br` = saved user brightness
+- `rot` = saved display rotation
+- `rbg` = reboot guard flag (`true` while boot is still considered unstable)
 
 ---
 

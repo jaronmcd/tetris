@@ -18,6 +18,16 @@
 #define BRIGHTNESS 95
 
 // ======================
+// Reboot brightness guard
+// ======================
+// If the previous boot resets before this uptime, the next boot is treated as
+// unintentional and brightness is clamped to SAFE_REBOOT_BRIGHTNESS.
+// This helps recover from brownout/restart loops on weak power supplies.
+#define SAFE_REBOOT_BRIGHTNESS_GUARD_ENABLED true
+#define SAFE_REBOOT_STABLE_UPTIME_MS 12000
+#define SAFE_REBOOT_BRIGHTNESS 64
+
+// ======================
 // Brightness fade
 // ======================
 // Start at 0 on boot and fade to the selected target.

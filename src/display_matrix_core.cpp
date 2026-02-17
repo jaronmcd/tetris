@@ -11,23 +11,69 @@ static inline uint8_t clampBrightnessSetting(uint32_t b) {
   return (uint8_t)b;
 }
 
+static constexpr const char* DISPLAY_PREFS_NS = "display";
+static constexpr const char* DISPLAY_BRIGHTNESS_KEY = "br";
+static constexpr const char* DISPLAY_ROTATION_KEY = "rot";
+static constexpr const char* DISPLAY_REBOOT_GUARD_KEY = "rbg";
+
 void MatrixDisplay::loadDisplaySettings() {
   Preferences prefs;
-  prefs.begin("display", true);
-  const uint32_t savedBrightness = prefs.getUInt("br", (uint32_t)BRIGHTNESS);
-  const uint32_t savedRotation = prefs.getUInt("rot", 0u);
+  prefs.begin(DISPLAY_PREFS_NS, false);
+  uint32_t savedBrightness = prefs.getUInt(DISPLAY_BRIGHTNESS_KEY, (uint32_t)BRIGHTNESS);
+  const uint32_t savedRotation = prefs.getUInt(DISPLAY_ROTATION_KEY, 0u);
+
+#if SAFE_REBOOT_BRIGHTNESS_GUARD_ENABLED
+  rebootBrightnessWasClamped_ = false;
+  const bool previousBootUnclean = prefs.getBool(DISPLAY_REBOOT_GUARD_KEY, false);
+  const uint8_t safeBrightness = clampBrightnessSetting((uint32_t)SAFE_REBOOT_BRIGHTNESS);
+  if (previousBootUnclean && savedBrightness > (uint32_t)safeBrightness) {
+    savedBrightness = (uint32_t)safeBrightness;
+    prefs.putUInt(DISPLAY_BRIGHTNESS_KEY, savedBrightness);
+    rebootBrightnessWasClamped_ = true;
+  }
+
+  // Mark this boot as "in progress". We clear it after stable uptime.
+  prefs.putBool(DISPLAY_REBOOT_GUARD_KEY, true);
+  rebootGuardArmed_ = true;
+  rebootGuardArmMs_ = millis();
+#else
+  rebootBrightnessWasClamped_ = false;
+  rebootGuardArmed_ = false;
+  rebootGuardArmMs_ = 0;
+#endif
+
   prefs.end();
 
   userBrightness_ = clampBrightnessSetting(savedBrightness);
   rotationQuarterTurns_ = (uint8_t)(savedRotation & 0x03u);
+
+#if SAFE_REBOOT_BRIGHTNESS_GUARD_ENABLED
+  if (rebootBrightnessWasClamped_) {
+    Serial.printf("Display: unclean reboot detected, brightness clamped to safe level (%u).\n",
+                  (unsigned)userBrightness_);
+  }
+#endif
 }
 
 void MatrixDisplay::saveDisplaySettings() const {
   Preferences prefs;
-  prefs.begin("display", false);
-  prefs.putUInt("br", (uint32_t)userBrightness_);
-  prefs.putUInt("rot", (uint32_t)rotationQuarterTurns_);
+  prefs.begin(DISPLAY_PREFS_NS, false);
+  prefs.putUInt(DISPLAY_BRIGHTNESS_KEY, (uint32_t)userBrightness_);
+  prefs.putUInt(DISPLAY_ROTATION_KEY, (uint32_t)rotationQuarterTurns_);
   prefs.end();
+}
+
+void MatrixDisplay::disarmRebootBrightnessGuard() {
+#if SAFE_REBOOT_BRIGHTNESS_GUARD_ENABLED
+  if (!rebootGuardArmed_) return;
+
+  Preferences prefs;
+  prefs.begin(DISPLAY_PREFS_NS, false);
+  prefs.putBool(DISPLAY_REBOOT_GUARD_KEY, false);
+  prefs.end();
+
+  rebootGuardArmed_ = false;
+#endif
 }
 
 void MatrixDisplay::adjustUserBrightness(int8_t delta) {
@@ -51,6 +97,15 @@ void MatrixDisplay::rotateDisplay(int8_t quarterTurnsDelta) {
 }
 
 void MatrixDisplay::tickPowerBrightness(uint32_t nowMs) {
+#if SAFE_REBOOT_BRIGHTNESS_GUARD_ENABLED
+  if (rebootGuardArmed_) {
+    const uint32_t aliveMs = (uint32_t)(nowMs - rebootGuardArmMs_);
+    if (aliveMs >= (uint32_t)SAFE_REBOOT_STABLE_UPTIME_MS) {
+      disarmRebootBrightnessGuard();
+    }
+  }
+#endif
+
   uint8_t target = userBrightness_;
 #if PAUSE_DIM_ENABLED
   if (paused_ && target > (uint8_t)PAUSE_BRIGHTNESS_WHEN_PAUSED) {
